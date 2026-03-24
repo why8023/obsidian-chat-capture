@@ -1,22 +1,22 @@
 import { Notice } from "obsidian";
 import type ObarPlugin from "../main";
 import { bindCurrentViewerCommand } from "./bind-current-viewer";
-import { openChatGPTCommand } from "./open-chatgpt";
+import { openConfiguredChatViewerCommand } from "./open-chatgpt";
 import { reinjectCommand } from "./reinject";
 import { saveNowCommand } from "./save-now";
 
 export function registerCommands(plugin: ObarPlugin): void {
 	plugin.addCommand({
 		id: "obar-open-chatgpt-in-web-viewer",
-		name: "Open web viewer",
+		name: "Open configured chat web viewer",
 		callback: () => {
-			void openChatGPTCommand(plugin);
+			void openConfiguredChatViewerCommand(plugin);
 		},
 	});
 
 	plugin.addCommand({
 		id: "obar-bind-current-chatgpt-web-viewer",
-		name: "Bind current web viewer",
+		name: "Bind current configured chat web viewer",
 		callback: () => {
 			void bindCurrentViewerCommand(plugin);
 		},

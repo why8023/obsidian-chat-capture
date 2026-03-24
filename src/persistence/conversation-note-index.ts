@@ -6,6 +6,7 @@ import {
 	type CachedMetadata,
 } from "obsidian";
 import { Logger } from "../debug/logger";
+import { getTrackedSaveFolders } from "../settings/chat-targets";
 import type {
 	ConversationNoteEntry,
 	NormalizedSnapshot,
@@ -100,7 +101,7 @@ export class ConversationNoteIndex {
 
 		this.logger.info("Conversation note index rebuilt", {
 			count: this.byFilePath.size,
-			saveFolder: this.getSettings().saveFolder,
+			saveFolders: getTrackedSaveFolders(this.getSettings()),
 		});
 	}
 
@@ -199,14 +200,33 @@ export class ConversationNoteIndex {
 	}
 
 	private collectTrackedMarkdownFiles(): TFile[] {
-		const root = this.app.vault.getFolderByPath(this.getSettings().saveFolder);
-		if (!root) {
+		const trackedFolders = getTrackedSaveFolders(this.getSettings());
+		if (trackedFolders.length === 0) {
+			return [];
+		}
+
+		const collected = new Map<string, TFile>();
+		let foundExistingRoot = false;
+
+		for (const folder of trackedFolders) {
+			const root = this.app.vault.getFolderByPath(folder);
+			if (!root) {
+				continue;
+			}
+
+			foundExistingRoot = true;
+			for (const file of this.collectMarkdownFilesFromFolder(root)) {
+				collected.set(file.path, file);
+			}
+		}
+
+		if (!foundExistingRoot) {
 			return this.app.vault
 				.getMarkdownFiles()
 				.filter((file) => this.isTrackedPath(file.path));
 		}
 
-		return this.collectMarkdownFilesFromFolder(root);
+		return [...collected.values()];
 	}
 
 	private collectMarkdownFilesFromFolder(folder: TFolder): TFile[] {
@@ -224,8 +244,9 @@ export class ConversationNoteIndex {
 	}
 
 	private isTrackedPath(path: string): boolean {
-		const folder = this.getSettings().saveFolder;
-		return path === folder || path.startsWith(`${folder}/`);
+		return getTrackedSaveFolders(this.getSettings()).some(
+			(folder) => path === folder || path.startsWith(`${folder}/`),
+		);
 	}
 
 	private reindexFile(file: TFile): void {

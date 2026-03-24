@@ -83,7 +83,7 @@ export class RuntimeController {
 		this.forceReinject = true;
 		if (this.deps.settings().autoCapture && !this.deps.state().capturePaused) {
 			this.scheduleNextTick(
-				this.deps.viewerManager.isAnyChatGPTLeafActive()
+				this.deps.viewerManager.isAnyTrackedLeafActive()
 					? 500
 					: this.backgroundIdleDelay(),
 			);
@@ -91,7 +91,7 @@ export class RuntimeController {
 	}
 
 	async handleActiveLeafChange(): Promise<void> {
-		if (this.deps.viewerManager.isAnyChatGPTLeafActive()) {
+		if (this.deps.viewerManager.isAnyTrackedLeafActive()) {
 			this.scheduleNextTick(250);
 			return;
 		}
@@ -219,10 +219,10 @@ export class RuntimeController {
 				this.failureCount = 0;
 				this.stateMachine.force("idle");
 				this.awaitingStability = false;
-				nextDelay = this.deps.viewerManager.isAnyChatGPTLeafActive()
+				nextDelay = this.deps.viewerManager.isAnyTrackedLeafActive()
 					? Math.min(this.deps.settings().pollIntervalMs, 1_000)
 					: this.backgroundIdleDelay();
-				this.deps.onStatusChange("Chat capture: no ChatGPT Web Viewer found");
+				this.deps.onStatusChange("Chat capture: no matching Web Viewer found");
 				return false;
 			}
 

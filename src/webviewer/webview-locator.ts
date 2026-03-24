@@ -1,6 +1,6 @@
 import type { WorkspaceLeaf } from "obsidian";
-import { CHATGPT_URL_PREFIXES } from "../constants";
-import type { ObarWebview, WebviewBinding } from "../types";
+import { isConfiguredChatUrl } from "../settings/chat-targets";
+import type { ObarWebview, PluginSettings, WebviewBinding } from "../types";
 
 interface LeafWithPrivateId extends WorkspaceLeaf {
 	id?: string;
@@ -44,14 +44,6 @@ export function getLeafWebViewerUrl(leaf: WorkspaceLeaf): string | null {
 	return typeof url === "string" && url.length > 0 ? url : null;
 }
 
-export function isChatGPTUrl(url: string | null | undefined): boolean {
-	if (!url) {
-		return false;
-	}
-
-	return CHATGPT_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
-}
-
 export function safeGetWebviewUrl(webview: ObarWebview): string | null {
 	try {
 		if (typeof webview.getURL === "function") {
@@ -75,6 +67,8 @@ function belongsToLeaf(webview: ObarWebview, leaf: WorkspaceLeaf): boolean {
 }
 
 export class WebviewLocator {
+	constructor(private readonly getSettings: () => PluginSettings) {}
+
 	locateForLeaf(leaf: WorkspaceLeaf): WebviewBinding | null {
 		const candidates = Array.from(document.querySelectorAll<ObarWebview>("webview"));
 		const leafId = getLeafId(leaf);
@@ -88,10 +82,13 @@ export class WebviewLocator {
 					score:
 						(belongsToLeaf(webview, leaf) ? 4 : 0) +
 						(isVisible(webview) ? 2 : 0) +
-						(isChatGPTUrl(url) ? 1 : 0),
+						(isConfiguredChatUrl(url, this.getSettings()) ? 1 : 0),
 				};
 			})
-			.filter((candidate) => candidate.url && isChatGPTUrl(candidate.url))
+			.filter(
+				(candidate) =>
+					candidate.url && isConfiguredChatUrl(candidate.url, this.getSettings()),
+			)
 			.sort((left, right) => right.score - left.score);
 
 		const top = ranked[0];

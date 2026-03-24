@@ -1,7 +1,9 @@
 import { App, type WorkspaceLeaf } from "obsidian";
+import { isConfiguredChatUrl } from "../settings/chat-targets";
 import type {
 	LogLevel,
 	ObarWebview,
+	PluginSettings,
 	WebviewActivityEvent,
 	WebviewBinding,
 } from "../types";
@@ -9,7 +11,6 @@ import { Logger } from "../debug/logger";
 import {
 	getLeafId,
 	getLeafWebViewerUrl,
-	isChatGPTUrl,
 	safeGetWebviewUrl,
 	WebviewLocator,
 } from "./webview-locator";
@@ -49,7 +50,6 @@ interface WebviewListenerRegistration {
 }
 
 export class ViewerManager {
-	private readonly locator = new WebviewLocator();
 	private readonly observedWebviews = new Set<ObarWebview>();
 	private readonly webviewListeners = new Map<
 		ObarWebview,
@@ -58,13 +58,17 @@ export class ViewerManager {
 	private readonly recentActivityAt = new Map<string, number>();
 	private activityHandler: ((activity: WebviewActivityEvent) => void) | null = null;
 	private preferredLeafId: string | null = null;
+	private readonly locator: WebviewLocator;
 
 	constructor(
 		private readonly app: App,
+		private readonly getSettings: () => PluginSettings,
 		private readonly logger: Logger,
-	) {}
+	) {
+		this.locator = new WebviewLocator(this.getSettings);
+	}
 
-	async openChatGPTInWebViewer(url: string): Promise<WorkspaceLeaf> {
+	async openUrlInWebViewer(url: string): Promise<WorkspaceLeaf> {
 		const leaf = this.app.workspace.getLeaf("tab");
 		await leaf.setViewState({
 			type: "webviewer",
@@ -75,11 +79,11 @@ export class ViewerManager {
 			},
 		} as never);
 		await this.app.workspace.revealLeaf(leaf);
-		this.logger.info("Opened ChatGPT in Web Viewer", { url });
+		this.logger.info("Opened configured chat URL in Web Viewer", { url });
 		return leaf;
 	}
 
-	async bindActiveChatGPTViewer(): Promise<string | null> {
+	async bindActiveCompatibleViewer(): Promise<string | null> {
 		const activeLeaf = this.app.workspace.getMostRecentLeaf();
 		if (!activeLeaf) {
 			return null;
@@ -90,14 +94,14 @@ export class ViewerManager {
 
 	async bindLeaf(leaf: WorkspaceLeaf): Promise<string | null> {
 		const url = getLeafWebViewerUrl(leaf);
-		if (!isChatGPTUrl(url)) {
+		if (!isConfiguredChatUrl(url, this.getSettings())) {
 			return null;
 		}
 
 		const leafId = getLeafId(leaf);
 		this.preferredLeafId = leafId;
 		this.recentActivityAt.set(leafId, Date.now());
-		this.logger.info("Prioritized ChatGPT Web Viewer", {
+		this.logger.info("Prioritized configured chat Web Viewer", {
 			leafId,
 			url,
 		});
@@ -113,9 +117,11 @@ export class ViewerManager {
 		return ranked[0]?.binding ?? null;
 	}
 
-	isAnyChatGPTLeafActive(): boolean {
+	isAnyTrackedLeafActive(): boolean {
 		const activeLeaf = this.app.workspace.getMostRecentLeaf();
-		return activeLeaf ? isChatGPTUrl(getLeafWebViewerUrl(activeLeaf)) : false;
+		return activeLeaf
+			? isConfiguredChatUrl(getLeafWebViewerUrl(activeLeaf), this.getSettings())
+			: false;
 	}
 
 	isLeafActive(leafId: string): boolean {
@@ -137,7 +143,7 @@ export class ViewerManager {
 		const activeLeafId = activeLeaf ? getLeafId(activeLeaf) : null;
 		const now = Date.now();
 
-		return this.getChatGPTLeaves()
+		return this.getConfiguredChatLeaves()
 			.map((leaf) => {
 				const binding = this.locator.locateForLeaf(leaf);
 				if (!binding) {
@@ -162,13 +168,16 @@ export class ViewerManager {
 			.sort((left, right) => right.score - left.score);
 	}
 
-	private getChatGPTLeaves(): WorkspaceLeaf[] {
+	private getConfiguredChatLeaves(): WorkspaceLeaf[] {
 		const leaves = this.app.workspace.getLeavesOfType("webviewer");
 		const activeLeaf = this.app.workspace.getMostRecentLeaf();
 		const ordered: WorkspaceLeaf[] = [];
 		const seen = new Set<string>();
 
-		if (activeLeaf && isChatGPTUrl(getLeafWebViewerUrl(activeLeaf))) {
+		if (
+			activeLeaf &&
+			isConfiguredChatUrl(getLeafWebViewerUrl(activeLeaf), this.getSettings())
+		) {
 			const activeLeafId = getLeafId(activeLeaf);
 			ordered.push(activeLeaf);
 			seen.add(activeLeafId);
@@ -176,7 +185,10 @@ export class ViewerManager {
 
 		for (const leaf of leaves) {
 			const leafId = getLeafId(leaf);
-			if (seen.has(leafId) || !isChatGPTUrl(getLeafWebViewerUrl(leaf))) {
+			if (
+				seen.has(leafId) ||
+				!isConfiguredChatUrl(getLeafWebViewerUrl(leaf), this.getSettings())
+			) {
 				continue;
 			}
 

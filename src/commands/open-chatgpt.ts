@@ -1,7 +1,7 @@
 import type ObarPlugin from "../main";
 
-export async function openChatGPTCommand(
+export async function openConfiguredChatViewerCommand(
 	plugin: ObarPlugin,
 ): Promise<void> {
-	await plugin.openChatGPTViewer();
+	await plugin.openConfiguredChatViewer();
 }

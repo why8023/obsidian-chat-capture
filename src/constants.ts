@@ -4,11 +4,17 @@ export const EXTRACTOR_VERSION = "0.3.0";
 export const LOG_BUFFER_LIMIT = 500;
 export const OBAR_CAPTURE_SOURCE = "obar-chatgpt-webviewer";
 
-export const CHATGPT_URL_PREFIXES = ["https://chatgpt.com/"];
+export const DEFAULT_CHAT_TARGET_URL_PATTERN = "https://chatgpt.com/";
+export const DEFAULT_CHAT_TARGET_SAVE_FOLDER = "chatgpt";
+export const LEGACY_DEFAULT_SAVE_FOLDER = "OBAR Chats";
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-	chatgptUrl: "https://chatgpt.com/",
-	saveFolder: "OBAR Chats",
+	chatTargets: [
+		{
+			urlPattern: DEFAULT_CHAT_TARGET_URL_PATTERN,
+			saveFolder: DEFAULT_CHAT_TARGET_SAVE_FOLDER,
+		},
+	],
 	fileNameTemplate: "{{date}} {{title}}",
 	conversationRoundSeparator: "---",
 	pollIntervalMs: 1500,

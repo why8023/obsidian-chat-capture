@@ -18,9 +18,13 @@ export type RuntimeState =
 	| "backoff"
 	| "error";
 
-export interface PluginSettings {
-	chatgptUrl: string;
+export interface ChatTargetRule {
+	urlPattern: string;
 	saveFolder: string;
+}
+
+export interface PluginSettings {
+	chatTargets: ChatTargetRule[];
 	fileNameTemplate: string;
 	conversationRoundSeparator: string;
 	pollIntervalMs: number;
@@ -122,8 +126,13 @@ export interface PluginStateData {
 	capturePaused: boolean;
 }
 
+export interface PersistedPluginSettingsData extends Partial<PluginSettings> {
+	chatgptUrl?: string;
+	saveFolder?: string;
+}
+
 export interface PersistedPluginData {
-	settings?: Partial<PluginSettings>;
+	settings?: PersistedPluginSettingsData;
 	state?: Partial<PluginStateData>;
 }
 

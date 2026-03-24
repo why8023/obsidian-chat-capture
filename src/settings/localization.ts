@@ -14,8 +14,7 @@ export interface SettingsTabCopy {
 		debug: string;
 	};
 	fields: {
-		chatUrl: SettingText;
-		saveFolder: SettingText;
+		chatTargets: SettingText;
 		fileNameTemplate: SettingText;
 		conversationRoundSeparator: SettingText;
 		pollIntervalMs: SettingText;
@@ -25,6 +24,16 @@ export interface SettingsTabCopy {
 		saveRawSnapshot: SettingText;
 		maxHtmlSnippetLength: SettingText;
 		debugMode: SettingText;
+	};
+	chatTargetRule: {
+		namePrefix: string;
+		description: string;
+		urlPlaceholder: string;
+		saveFolderPlaceholder: string;
+	};
+	actions: {
+		addChatTarget: string;
+		removeChatTarget: string;
 	};
 }
 
@@ -36,15 +45,10 @@ const ENGLISH_COPY: SettingsTabCopy = {
 		debug: "Debug and diagnostics",
 	},
 	fields: {
-		chatUrl: {
-			name: "Chat URL",
-			description: "Open this URL in the controlled web viewer.",
-			placeholder: "https://chatgpt.com/",
-		},
-		saveFolder: {
-			name: "Save folder",
-			description: "Folder inside the vault where conversation notes are written.",
-			placeholder: "OBAR Chats",
+		chatTargets: {
+			name: "Chat URL rules",
+			description:
+				"Map each URL prefix to its own save folder. The longest matching prefix wins.",
 		},
 		fileNameTemplate: {
 			name: "File name template",
@@ -93,6 +97,16 @@ const ENGLISH_COPY: SettingsTabCopy = {
 			description: "Keep verbose logs and snapshot dumps for troubleshooting.",
 		},
 	},
+	chatTargetRule: {
+		namePrefix: "Match rule",
+		description: "Use one URL prefix and one vault folder for each supported chat site.",
+		urlPlaceholder: "https://chatgpt.com/",
+		saveFolderPlaceholder: "chatgpt",
+	},
+	actions: {
+		addChatTarget: "Add rule",
+		removeChatTarget: "Remove rule",
+	},
 };
 
 const CHINESE_COPY: SettingsTabCopy = {
@@ -103,15 +117,9 @@ const CHINESE_COPY: SettingsTabCopy = {
 		debug: "调试与诊断",
 	},
 	fields: {
-		chatUrl: {
-			name: "聊天地址",
-			description: "在受控的 Web Viewer 中打开这个地址。",
-			placeholder: "https://chatgpt.com/",
-		},
-		saveFolder: {
-			name: "保存目录",
-			description: "会话笔记写入到库内的这个目录。",
-			placeholder: "OBAR Chats",
+		chatTargets: {
+			name: "聊天地址规则",
+			description: "为每个网址前缀单独配置保存目录。匹配时会优先使用更长的前缀。",
 		},
 		fileNameTemplate: {
 			name: "文件名模板",
@@ -156,6 +164,16 @@ const CHINESE_COPY: SettingsTabCopy = {
 			name: "调试模式",
 			description: "保留更详细的日志和快照转储，便于排查问题。",
 		},
+	},
+	chatTargetRule: {
+		namePrefix: "匹配规则",
+		description: "每条规则对应一个聊天网址前缀和一个库内保存目录。",
+		urlPlaceholder: "https://chatgpt.com/",
+		saveFolderPlaceholder: "chatgpt",
+	},
+	actions: {
+		addChatTarget: "新增规则",
+		removeChatTarget: "删除规则",
 	},
 };
 

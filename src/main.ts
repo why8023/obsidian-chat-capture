@@ -12,6 +12,10 @@ import { ConversationNoteIndex } from "./persistence/conversation-note-index";
 import { MarkdownWriter } from "./persistence/markdown-writer";
 import { SessionIndex } from "./persistence/session-index";
 import { RuntimeController } from "./runtime/runtime-controller";
+import {
+	getPrimaryChatTarget,
+	getTrackedSaveFolders,
+} from "./settings/chat-targets";
 import { normalizePersistedData, normalizePluginSettings } from "./settings/settings";
 import { ObarSettingTab } from "./settings/setting-tab";
 import type {
@@ -55,7 +59,11 @@ export default class ObarPlugin extends Plugin {
 			() => this.settings,
 			this.logger,
 		);
-		this.viewerManager = new ViewerManager(this.app, this.logger);
+		this.viewerManager = new ViewerManager(
+			this.app,
+			() => this.settings,
+			this.logger,
+		);
 		this.runtime = new RuntimeController({
 			settings: () => this.settings,
 			state: () => this.state,
@@ -76,8 +84,8 @@ export default class ObarPlugin extends Plugin {
 		this.statusBarEl = this.addStatusBarItem();
 		this.setStatus("OBAR: idle");
 
-		this.addRibbonIcon("messages-square", "Open ChatGPT web viewer", () => {
-			void this.openChatGPTViewer();
+		this.addRibbonIcon("messages-square", "Open configured chat web viewer", () => {
+			void this.openConfiguredChatViewer();
 		});
 		this.addSettingTab(new ObarSettingTab(this.app, this));
 		registerCommands(this);
@@ -138,20 +146,26 @@ export default class ObarPlugin extends Plugin {
 		this.viewerManager?.dispose();
 	}
 
-	async openChatGPTViewer(): Promise<void> {
-		const leaf = await this.viewerManager.openChatGPTInWebViewer(this.settings.chatgptUrl);
+	async openConfiguredChatViewer(): Promise<void> {
+		const target = getPrimaryChatTarget(this.settings);
+		if (!target) {
+			new Notice("No active chat URL rule is configured.");
+			return;
+		}
+
+		const leaf = await this.viewerManager.openUrlInWebViewer(target.urlPattern);
 		await this.viewerManager.bindLeaf(leaf);
 		this.setStatus("OBAR: viewer opened");
 		if (this.settings.autoCapture && !this.state.capturePaused) {
 			await this.runtime.resume("viewer-opened");
 		}
-		new Notice("Opened the ChatGPT web viewer.");
+		new Notice("Opened the configured chat web viewer.");
 	}
 
 	async bindCurrentViewer(): Promise<boolean> {
-		const ref = await this.viewerManager.bindActiveChatGPTViewer();
+		const ref = await this.viewerManager.bindActiveCompatibleViewer();
 		if (!ref) {
-			new Notice("Active tab is not a compatible web viewer.");
+			new Notice("Active tab does not match any configured chat URL rule.");
 			return false;
 		}
 
@@ -219,13 +233,17 @@ export default class ObarPlugin extends Plugin {
 	}
 
 	async updateSettings(patch: Partial<PluginSettings>): Promise<void> {
-		const previousSaveFolder = this.settings.saveFolder;
+		const previousTrackedFolders = getTrackedSaveFolders(this.settings);
 		this.settings = normalizePluginSettings({
 			...this.settings,
 			...patch,
 		});
 		await this.persistPluginData();
-		if (previousSaveFolder !== this.settings.saveFolder) {
+		const nextTrackedFolders = getTrackedSaveFolders(this.settings);
+		if (
+			previousTrackedFolders.length !== nextTrackedFolders.length ||
+			previousTrackedFolders.some((folder, index) => folder !== nextTrackedFolders[index])
+		) {
 			await this.noteIndex.rebuild();
 		}
 		await this.runtime.handleSettingsUpdated();

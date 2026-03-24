@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type ObarPlugin from "../main";
+import type { ChatTargetRule } from "../types";
 import { getSettingsTabCopy, type SettingsTabCopy } from "./localization";
 
 export class ObarSettingTab extends PluginSettingTab {
@@ -13,16 +14,7 @@ export class ObarSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		this.addSectionHeading(copy.sections.general);
-		this.addTextSetting(copy.fields.chatUrl, this.plugin.settings.chatgptUrl, async (value) => {
-			await this.plugin.updateSettings({ chatgptUrl: value });
-		});
-		this.addTextSetting(
-			copy.fields.saveFolder,
-			this.plugin.settings.saveFolder,
-			async (value) => {
-				await this.plugin.updateSettings({ saveFolder: value });
-			},
-		);
+		this.addChatTargetSettings(copy);
 		this.addTextSetting(
 			copy.fields.fileNameTemplate,
 			this.plugin.settings.fileNameTemplate,
@@ -132,5 +124,74 @@ export class ObarSettingTab extends PluginSettingTab {
 			.setName(copy.name)
 			.setDesc(copy.description)
 			.addToggle((toggle) => toggle.setValue(value).onChange(onChange));
+	}
+
+	private addChatTargetSettings(copy: SettingsTabCopy): void {
+		new Setting(this.containerEl)
+			.setName(copy.fields.chatTargets.name)
+			.setDesc(copy.fields.chatTargets.description)
+			.addButton((button) =>
+				button
+					.setButtonText(copy.actions.addChatTarget)
+					.onClick(async () => {
+						await this.plugin.updateSettings({
+							chatTargets: [
+								...this.plugin.settings.chatTargets,
+								{
+									urlPattern: "",
+									saveFolder: "",
+								},
+							],
+						});
+						this.display();
+					}),
+			);
+
+		this.plugin.settings.chatTargets.forEach((rule, index) => {
+			const setting = new Setting(this.containerEl)
+				.setName(`${copy.chatTargetRule.namePrefix} ${index + 1}`)
+				.setDesc(copy.chatTargetRule.description)
+				.addText((text) => {
+					text.inputEl.style.width = "18rem";
+					text.setPlaceholder(copy.chatTargetRule.urlPlaceholder);
+					return text
+						.setValue(rule.urlPattern)
+						.onChange(async (value) => this.updateChatTarget(index, { urlPattern: value }));
+				})
+				.addText((text) => {
+					text.inputEl.style.width = "12rem";
+					text.setPlaceholder(copy.chatTargetRule.saveFolderPlaceholder);
+					return text
+						.setValue(rule.saveFolder)
+						.onChange(async (value) => this.updateChatTarget(index, { saveFolder: value }));
+				});
+
+			if (this.plugin.settings.chatTargets.length > 1) {
+				setting.addExtraButton((button) =>
+					button
+						.setIcon("trash")
+						.setTooltip(copy.actions.removeChatTarget)
+						.onClick(async () => {
+							await this.plugin.updateSettings({
+								chatTargets: this.plugin.settings.chatTargets.filter(
+									(_, candidateIndex) => candidateIndex !== index,
+								),
+							});
+							this.display();
+						}),
+				);
+			}
+		});
+	}
+
+	private async updateChatTarget(
+		index: number,
+		patch: Partial<ChatTargetRule>,
+	): Promise<void> {
+		await this.plugin.updateSettings({
+			chatTargets: this.plugin.settings.chatTargets.map((rule, candidateIndex) =>
+				candidateIndex === index ? { ...rule, ...patch } : rule,
+			),
+		});
 	}
 }

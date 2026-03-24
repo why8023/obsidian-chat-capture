@@ -1,10 +1,11 @@
-import { normalizePath } from "obsidian";
 import { DEFAULT_PLUGIN_STATE, DEFAULT_SETTINGS } from "../constants";
 import type {
 	PersistedPluginData,
 	PluginSettings,
 	PluginStateData,
+	PersistedPluginSettingsData,
 } from "../types";
+import { migrateLegacyChatTargetRules } from "./chat-targets";
 
 function clampInteger(
 	value: number | undefined,
@@ -18,12 +19,6 @@ function clampInteger(
 
 	const rounded = Math.round(value);
 	return Math.max(minimum, Math.min(maximum, rounded));
-}
-
-function normalizeFolder(input: string | undefined, fallback: string): string {
-	const candidate = (input ?? fallback).trim().replace(/^\/+|\/+$/g, "");
-	const normalized = normalizePath(candidate || fallback).replace(/^\/+|\/+$/g, "");
-	return normalized || fallback;
 }
 
 function normalizeTemplate(input: string | undefined, fallback: string): string {
@@ -42,21 +37,15 @@ function normalizeConversationRoundSeparator(
 	return input.trim();
 }
 
-function normalizeUrl(input: string | undefined, fallback: string): string {
-	const value = (input ?? fallback).trim();
-	if (!value.startsWith("http://") && !value.startsWith("https://")) {
-		return fallback;
-	}
-
-	return value;
-}
-
 export function normalizePluginSettings(
-	data?: Partial<PluginSettings>,
+	data?: PersistedPluginSettingsData,
 ): PluginSettings {
 	return {
-		chatgptUrl: normalizeUrl(data?.chatgptUrl, DEFAULT_SETTINGS.chatgptUrl),
-		saveFolder: normalizeFolder(data?.saveFolder, DEFAULT_SETTINGS.saveFolder),
+		chatTargets: migrateLegacyChatTargetRules({
+			chatTargets: data?.chatTargets,
+			chatgptUrl: data?.chatgptUrl,
+			saveFolder: data?.saveFolder,
+		}),
 		fileNameTemplate: normalizeTemplate(
 			data?.fileNameTemplate,
 			DEFAULT_SETTINGS.fileNameTemplate,

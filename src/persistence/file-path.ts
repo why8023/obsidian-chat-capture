@@ -1,4 +1,5 @@
 import { normalizePath } from "obsidian";
+import { resolveSaveFolderForUrl } from "../settings/chat-targets";
 import type { NormalizedSnapshot, PluginSettings } from "../types";
 
 export function sanitizeFileSegment(value: string): string {
@@ -14,6 +15,7 @@ export function buildConversationFilePath(
 	snapshot: NormalizedSnapshot,
 	suffix = "",
 ): string {
+	const saveFolder = resolveSaveFolderForUrl(settings, snapshot.pageUrl);
 	const date = new Date(snapshot.capturedAt).toISOString().slice(0, 10);
 	const shortKey = snapshot.conversationKey.slice(0, 8);
 	const title = sanitizeFileSegment(
@@ -29,5 +31,5 @@ export function buildConversationFilePath(
 		.join(shortKey);
 	const fileName = sanitizeFileSegment(`${base}${suffix ? ` ${suffix}` : ""}`);
 
-	return normalizePath(`${settings.saveFolder}/${fileName}.md`);
+	return normalizePath(`${saveFolder}/${fileName}.md`);
 }

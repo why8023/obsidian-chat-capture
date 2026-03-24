@@ -1,0 +1,40 @@
+export interface SelectorProfileDefinition {
+	id: string;
+	description: string;
+	mainCandidates: string[];
+	messageCandidates: string[];
+	userRoleHints: string[];
+	assistantRoleHints: string[];
+	systemRoleHints: string[];
+	ignoreSelectors: string[];
+}
+
+export const DEFAULT_SELECTOR_PROFILES: SelectorProfileDefinition[] = [
+	{
+		id: "chatgpt-web-basic",
+		description: "Baseline selectors for ChatGPT Web Viewer capture.",
+		mainCandidates: [
+			"main",
+			"[role='main']",
+			"div[role='presentation'] main",
+		],
+		messageCandidates: [
+			"[data-message-author-role]",
+			"article[data-testid*='conversation-turn']",
+			"main article",
+			"main [data-testid^='conversation-turn']",
+		],
+		userRoleHints: ["user", "you"],
+		assistantRoleHints: ["assistant", "chatgpt", "gpt", "model"],
+		systemRoleHints: ["system"],
+		ignoreSelectors: [
+			"button",
+			"svg",
+			"style",
+			"script",
+			"noscript",
+			"textarea",
+			"[aria-hidden='true']",
+		],
+	},
+];

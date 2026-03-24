@@ -1,8 +1,13 @@
-/*
+body .chat-capture-log-modal {
+	max-height: 70vh;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
-
-If your plugin does not need CSS, delete this file.
-
-*/
+body .chat-capture-log-pre {
+	white-space: pre-wrap;
+	word-break: break-word;
+	max-height: 60vh;
+	overflow: auto;
+	padding: 12px;
+	border-radius: 8px;
+	background: var(--background-secondary);
+}

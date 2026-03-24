@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
-	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"name": "obsidian-chat-capture",
+	"version": "0.1.0",
+	"description": "Capture ChatGPT Web Viewer conversations into Markdown notes for Obsidian.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
@@ -12,6 +12,10 @@
 	},
 	"keywords": [],
 	"license": "0-BSD",
+	"volta": {
+		"node": "22.20.0",
+		"npm": "10.9.3"
+	},
 	"devDependencies": {
 		"@types/node": "^16.11.6",
 		"esbuild": "0.25.5",

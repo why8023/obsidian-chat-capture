@@ -1,99 +1,186 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { Notice, Plugin } from "obsidian";
+import {
+	DEFAULT_PLUGIN_STATE,
+	DEFAULT_SETTINGS,
+	LOG_BUFFER_LIMIT,
+} from "./constants";
+import { registerCommands } from "./commands";
+import { SnapshotNormalizer } from "./capture/snapshot-normalizer";
+import { DebugDumpWriter } from "./debug/debug-dump";
+import { CaptureLogModal, Logger } from "./debug/logger";
+import { MarkdownWriter } from "./persistence/markdown-writer";
+import { SessionIndex } from "./persistence/session-index";
+import { RuntimeController } from "./runtime/runtime-controller";
+import { normalizePersistedData, normalizePluginSettings } from "./settings/settings";
+import { ChatCaptureSettingTab } from "./settings/setting-tab";
+import type {
+	PersistedPluginData,
+	PluginSettings,
+	PluginStateData,
+} from "./types";
+import { ViewerManager } from "./webviewer/viewer-manager";
 
-// Remember to rename these classes and interfaces!
+export default class ObsidianChatCapturePlugin extends Plugin {
+	settings: PluginSettings = DEFAULT_SETTINGS;
+	state: PluginStateData = DEFAULT_PLUGIN_STATE;
+	logger!: Logger;
+	debugDump!: DebugDumpWriter;
+	sessionIndex!: SessionIndex;
+	markdownWriter!: MarkdownWriter;
+	viewerManager!: ViewerManager;
+	runtime!: RuntimeController;
+	private statusBarEl!: HTMLElement;
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+	async onload(): Promise<void> {
+		await this.loadPluginData();
 
-	async onload() {
-		await this.loadSettings();
-
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+		this.logger = new Logger(LOG_BUFFER_LIMIT);
+		this.debugDump = new DebugDumpWriter(
+			this.app,
+			this.manifest,
+			() => this.settings.debugMode || this.settings.saveRawSnapshot,
+			this.logger,
+		);
+		this.sessionIndex = new SessionIndex(this.state, () => this.persistPluginData());
+		this.markdownWriter = new MarkdownWriter(
+			this.app,
+			() => this.settings,
+			this.logger,
+		);
+		this.viewerManager = new ViewerManager(
+			this.app,
+			this.logger,
+			() => this.state,
+			() => this.persistPluginData(),
+		);
+		this.runtime = new RuntimeController({
+			settings: () => this.settings,
+			state: () => this.state,
+			persistState: () => this.persistPluginData(),
+			viewerManager: this.viewerManager,
+			sessionIndex: this.sessionIndex,
+			markdownWriter: this.markdownWriter,
+			normalizer: new SnapshotNormalizer(),
+			debugDump: this.debugDump,
+			logger: this.logger,
+			onStatusChange: (status) => this.setStatus(status),
 		});
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+		this.statusBarEl = this.addStatusBarItem();
+		this.setStatus("Chat capture: idle");
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
+		this.addRibbonIcon("messages-square", "Open web viewer", () => {
+			void this.openChatGPTViewer();
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
+		this.addSettingTab(new ChatCaptureSettingTab(this.app, this));
+		registerCommands(this);
+
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", () => {
+				void this.runtime.handleActiveLeafChange();
+			}),
+		);
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => {
+				void this.runtime.handleLayoutChange();
+			}),
+		);
+
+		this.app.workspace.onLayoutReady(() => {
+			void this.runtime.handleLayoutReady();
 		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+	}
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-				return false;
-			}
+	onunload(): void {
+		this.runtime?.stop();
+		this.viewerManager?.dispose();
+	}
+
+	async openChatGPTViewer(): Promise<void> {
+		const leaf = await this.viewerManager.openChatGPTInWebViewer(this.settings.chatgptUrl);
+		await this.viewerManager.bindLeaf(leaf);
+		this.setStatus("Chat capture: viewer opened");
+		if (this.settings.autoCapture && !this.state.capturePaused) {
+			await this.runtime.resume("viewer-opened");
+		}
+		new Notice("Opened web viewer.");
+	}
+
+	async bindCurrentViewer(): Promise<boolean> {
+		const ref = await this.viewerManager.bindActiveChatGPTViewer();
+		if (!ref) {
+			new Notice("Active tab is not a compatible web viewer.");
+			return false;
+		}
+
+		this.setStatus("Chat capture: viewer bound");
+		if (this.settings.autoCapture && !this.state.capturePaused) {
+			await this.runtime.resume("viewer-bound");
+		}
+		new Notice("Bound the active web viewer.");
+		return true;
+	}
+
+	async saveSnapshotNow(): Promise<boolean> {
+		const saved = await this.runtime.saveSnapshotNow();
+		new Notice(saved ? "Current snapshot saved." : "No snapshot was saved.");
+		return saved;
+	}
+
+	async reinjectCaptureScript(): Promise<boolean> {
+		const injected = await this.runtime.reinject();
+		new Notice(
+			injected
+				? "Capture script reinjected."
+				: "Failed to reinject the capture script.",
+		);
+		return injected;
+	}
+
+	async pauseAutoCapture(): Promise<void> {
+		await this.runtime.pause("command");
+		new Notice("Auto capture paused.");
+	}
+
+	async resumeAutoCapture(): Promise<void> {
+		if (!this.settings.autoCapture) {
+			new Notice("Auto capture is disabled in settings.");
+			return;
+		}
+
+		await this.runtime.resume("command");
+		new Notice("Auto capture resumed.");
+	}
+
+	openCaptureLog(): void {
+		new CaptureLogModal(this.app, this.logger.getEntries()).open();
+	}
+
+	async updateSettings(patch: Partial<PluginSettings>): Promise<void> {
+		this.settings = normalizePluginSettings({
+			...this.settings,
+			...patch,
 		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
+		await this.persistPluginData();
+		await this.runtime.handleSettingsUpdated();
 	}
 
-	onunload() {
+	private setStatus(status: string): void {
+		this.statusBarEl?.setText(status);
 	}
 
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+	private async loadPluginData(): Promise<void> {
+		const data = (await this.loadData()) as PersistedPluginData | null;
+		const normalized = normalizePersistedData(data);
+		this.settings = normalized.settings;
+		this.state = normalized.state;
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	private async persistPluginData(): Promise<void> {
+		const payload: PersistedPluginData = {
+			settings: this.settings,
+			state: this.state,
+		};
+		await this.saveData(payload);
 	}
 }

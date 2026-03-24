@@ -79,10 +79,16 @@ function compareEntries(left: ConversationNoteEntry, right: ConversationNoteEntr
 	return left.filePath.localeCompare(right.filePath);
 }
 
+type ConversationIdentityField =
+	| "conversationId"
+	| "conversationKey"
+	| "conversationAliasKey";
+
 export class ConversationNoteIndex {
 	private readonly byFilePath = new Map<string, ConversationNoteEntry>();
 	private readonly byConversationId = new Map<string, ConversationNoteEntry>();
 	private readonly byConversationKey = new Map<string, ConversationNoteEntry>();
+	private readonly byConversationAliasKey = new Map<string, ConversationNoteEntry>();
 
 	constructor(
 		private readonly app: App,
@@ -94,6 +100,7 @@ export class ConversationNoteIndex {
 		this.byFilePath.clear();
 		this.byConversationId.clear();
 		this.byConversationKey.clear();
+		this.byConversationAliasKey.clear();
 
 		for (const file of this.collectTrackedMarkdownFiles()) {
 			this.reindexFile(file);
@@ -121,7 +128,10 @@ export class ConversationNoteIndex {
 			}
 		}
 
-		return this.byConversationKey.get(snapshot.conversationKey);
+		return (
+			this.byConversationKey.get(snapshot.conversationKey) ??
+			this.byConversationAliasKey.get(snapshot.conversationAliasKey)
+		);
 	}
 
 	hasConversationForUrl(url: string): boolean {
@@ -144,6 +154,7 @@ export class ConversationNoteIndex {
 			filePath: entry.filePath,
 			conversationId: snapshot.conversationId,
 			conversationKey: snapshot.conversationKey,
+			conversationAliasKey: snapshot.conversationAliasKey,
 			chatUrl: snapshot.pageUrl,
 			title: snapshot.conversationTitle,
 			createdAt: entry.createdAt,
@@ -293,11 +304,15 @@ export class ConversationNoteIndex {
 		const conversationId =
 			normalizeString(readConversationFrontmatterEntry(frontmatter, "conversationId")) ??
 			extractConversationIdFromUrl(chatUrl);
+		const conversationAliasKey = normalizeString(
+			readConversationFrontmatterEntry(frontmatter, "conversationAliasKey"),
+		);
 
 		return {
 			filePath: file.path,
 			conversationId,
 			conversationKey,
+			conversationAliasKey,
 			chatUrl,
 			title: file.basename,
 			createdAt: parseTimestamp(
@@ -315,8 +330,25 @@ export class ConversationNoteIndex {
 	private upsertRecord(record: ConversationNoteEntry): void {
 		this.removePath(record.filePath);
 		this.byFilePath.set(record.filePath, record);
-		this.refreshIdentity(record.conversationId, this.byConversationId);
-		this.refreshIdentity(record.conversationKey, this.byConversationKey);
+		this.refreshIdentity(
+			record.conversationId,
+			this.byConversationId,
+			"conversationId",
+		);
+		this.refreshIdentity(
+			record.conversationKey,
+			this.byConversationKey,
+			"conversationKey",
+		);
+		this.refreshIdentity(
+			record.conversationAliasKey,
+			this.byConversationAliasKey,
+			"conversationAliasKey",
+			{
+				requireUnique: true,
+				warnOnDuplicate: false,
+			},
+		);
 	}
 
 	private removePath(path: string): void {
@@ -326,8 +358,25 @@ export class ConversationNoteIndex {
 		}
 
 		this.byFilePath.delete(path);
-		this.refreshIdentity(previous.conversationId, this.byConversationId);
-		this.refreshIdentity(previous.conversationKey, this.byConversationKey);
+		this.refreshIdentity(
+			previous.conversationId,
+			this.byConversationId,
+			"conversationId",
+		);
+		this.refreshIdentity(
+			previous.conversationKey,
+			this.byConversationKey,
+			"conversationKey",
+		);
+		this.refreshIdentity(
+			previous.conversationAliasKey,
+			this.byConversationAliasKey,
+			"conversationAliasKey",
+			{
+				requireUnique: true,
+				warnOnDuplicate: false,
+			},
+		);
 	}
 
 	private removePathTree(path: string): void {
@@ -341,19 +390,32 @@ export class ConversationNoteIndex {
 	private refreshIdentity(
 		key: string | undefined,
 		map: Map<string, ConversationNoteEntry>,
+		field: ConversationIdentityField,
+		options?: {
+			requireUnique?: boolean;
+			warnOnDuplicate?: boolean;
+		},
 	): void {
 		if (!key) {
 			return;
 		}
 
 		const matches = [...this.byFilePath.values()]
-			.filter((entry) => this.getIdentityValue(entry, map) === key)
+			.filter((entry) => this.getIdentityValue(entry, field) === key)
 			.sort(compareEntries);
+		if (options?.requireUnique && matches.length > 1) {
+			map.delete(key);
+			return;
+		}
 		const winner = matches[0];
 		if (winner) {
 			const previous = map.get(key);
 			map.set(key, winner);
-			if (previous && previous.filePath !== winner.filePath) {
+			if (
+				options?.warnOnDuplicate !== false &&
+				previous &&
+				previous.filePath !== winner.filePath
+			) {
 				this.logger.warn("Conversation note index found duplicate identities", {
 					key,
 					kept: winner.filePath,
@@ -368,10 +430,8 @@ export class ConversationNoteIndex {
 
 	private getIdentityValue(
 		entry: ConversationNoteEntry,
-		map: Map<string, ConversationNoteEntry>,
+		field: ConversationIdentityField,
 	): string | undefined {
-		return map === this.byConversationId
-			? entry.conversationId
-			: entry.conversationKey;
+		return entry[field];
 	}
 }

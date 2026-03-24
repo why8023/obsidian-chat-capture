@@ -32,6 +32,7 @@ export const OBAR_CONVERSATION_FRONTMATTER_KEYS = {
 	extractorVersion: "obar_extractor_version",
 	pageState: "obar_page_state",
 	conversationId: "obar_conversation_id",
+	conversationAliasKey: "obar_conversation_alias_key",
 } as const;
 
 type ConversationFrontmatterField = keyof typeof OBAR_CONVERSATION_FRONTMATTER_KEYS;
@@ -75,6 +76,9 @@ const CONVERSATION_FRONTMATTER_KEY_FALLBACKS: Record<
 	conversationId: [
 		OBAR_CONVERSATION_FRONTMATTER_KEYS.conversationId,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.conversationId,
+	],
+	conversationAliasKey: [
+		OBAR_CONVERSATION_FRONTMATTER_KEYS.conversationAliasKey,
 	],
 };
 
@@ -207,6 +211,8 @@ export function buildConversationFrontmatter(
 		[getConversationFrontmatterKey("messageCount")]: entry.lastStableMessageCount,
 		[getConversationFrontmatterKey("extractorVersion")]: snapshot.extractorVersion,
 		[getConversationFrontmatterKey("pageState")]: snapshot.pageState,
+		[getConversationFrontmatterKey("conversationAliasKey")]:
+			snapshot.conversationAliasKey,
 	};
 
 	if (snapshot.conversationId) {

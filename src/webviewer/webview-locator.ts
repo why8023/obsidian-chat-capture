@@ -17,6 +17,10 @@ function isVisible(element: HTMLElement): boolean {
 	);
 }
 
+function getLeafRoot(leaf: WorkspaceLeaf): HTMLElement {
+	return leaf.view.containerEl.closest(".workspace-leaf") ?? leaf.view.containerEl;
+}
+
 export function getLeafId(leaf: WorkspaceLeaf): string {
 	const privateId = (leaf as LeafWithPrivateId).id;
 	if (privateId) {
@@ -59,19 +63,15 @@ export function safeGetWebviewUrl(webview: ObarWebview): string | null {
 	return typeof webview.src === "string" && webview.src.length > 0 ? webview.src : null;
 }
 
-function belongsToLeaf(webview: ObarWebview, leaf: WorkspaceLeaf): boolean {
-	const leafRoot =
-		leaf.view.containerEl.closest(".workspace-leaf") ?? leaf.view.containerEl;
-	const webviewRoot = webview.closest(".workspace-leaf") ?? webview.parentElement;
-	return leafRoot === webviewRoot || leafRoot?.contains(webview) === true;
-}
-
 export class WebviewLocator {
 	constructor(private readonly getSettings: () => PluginSettings) {}
 
 	locateForLeaf(leaf: WorkspaceLeaf): WebviewBinding | null {
-		const candidates = Array.from(document.querySelectorAll<ObarWebview>("webview"));
+		const candidates = Array.from(
+			getLeafRoot(leaf).querySelectorAll<ObarWebview>("webview"),
+		);
 		const leafId = getLeafId(leaf);
+		const targetUrl = getLeafWebViewerUrl(leaf);
 
 		const ranked = candidates
 			.map((webview) => {
@@ -80,7 +80,7 @@ export class WebviewLocator {
 					webview,
 					url,
 					score:
-						(belongsToLeaf(webview, leaf) ? 4 : 0) +
+						(url === targetUrl ? 4 : 0) +
 						(isVisible(webview) ? 2 : 0) +
 						(isConfiguredChatUrl(url, this.getSettings()) ? 1 : 0),
 				};

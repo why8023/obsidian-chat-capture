@@ -80,6 +80,13 @@ export class SessionIndex {
 			.sort(compareSessionMatches);
 	}
 
+	private findMatchesByFilePath(filePath: string): SessionEntryMatch[] {
+		return Object.entries(this.sessions)
+			.filter(([, entry]) => entry.filePath === filePath)
+			.map(([key, entry]) => ({ key, entry }))
+			.sort(compareSessionMatches);
+	}
+
 	private createEntryFromNote(
 		note: ConversationNoteEntry,
 		snapshot: NormalizedSnapshot,
@@ -104,16 +111,18 @@ export class SessionIndex {
 		existingNote?: ConversationNoteEntry,
 	): PreparedSessionMerge {
 		const exactMatch = this.sessions[snapshot.conversationKey];
+		const filePathMatches = this.findMatchesByFilePath(filePath);
 		const sourceUrlMatches = this.findMatchesBySourceUrl(snapshot.pageUrl);
 		const existingMatch = exactMatch
 			? { key: snapshot.conversationKey, entry: exactMatch }
-			: sourceUrlMatches[0];
+			: filePathMatches[0] ?? sourceUrlMatches[0];
 		const existing =
 			existingMatch?.entry ??
 			(existingNote ? this.createEntryFromNote(existingNote, snapshot, filePath) : undefined);
-		const replacedKeys = sourceUrlMatches
+		const replacedKeys = [...filePathMatches, ...sourceUrlMatches]
 			.map((match) => match.key)
-			.filter((key) => key !== snapshot.conversationKey);
+			.filter((key) => key !== snapshot.conversationKey)
+			.filter((key, index, keys) => keys.indexOf(key) === index);
 		const nextEntry: SessionIndexEntry = {
 			conversationKey: snapshot.conversationKey,
 			filePath: existing?.filePath ?? filePath,

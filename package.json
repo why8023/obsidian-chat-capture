@@ -12,10 +12,6 @@
 	},
 	"keywords": [],
 	"license": "0-BSD",
-	"volta": {
-		"node": "22.20.0",
-		"npm": "10.9.3"
-	},
 	"devDependencies": {
 		"@types/node": "^16.11.6",
 		"esbuild": "0.25.5",

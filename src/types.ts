@@ -44,6 +44,7 @@ export interface ChatMessageSnapshot {
 	codeBlocks?: CodeBlock[];
 	rawHtmlSnippet?: string;
 	nodeFingerprint?: string;
+	hasCompletionActions?: boolean;
 }
 
 export interface ConversationSnapshot {
@@ -67,6 +68,7 @@ export interface NormalizedMessage {
 	codeBlocks: CodeBlock[];
 	rawHtmlSnippet?: string;
 	nodeFingerprint?: string;
+	hasCompletionActions: boolean;
 }
 
 export interface NormalizedSnapshot {

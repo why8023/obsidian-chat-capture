@@ -62,7 +62,7 @@ export class ChatCaptureSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Settle repeat count")
-			.setDesc("How many identical assistant snapshots count as stable.")
+			.setDesc("Fallback repeat count when no assistant completion actions are detected.")
 			.addText((text) =>
 				text
 					.setPlaceholder("2")
@@ -76,7 +76,7 @@ export class ChatCaptureSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Settle timeout")
-			.setDesc("Maximum wait in milliseconds before a reply is considered stable.")
+			.setDesc("Fallback wait in milliseconds when no assistant completion actions are detected.")
 			.addText((text) =>
 				text
 					.setPlaceholder("3000")

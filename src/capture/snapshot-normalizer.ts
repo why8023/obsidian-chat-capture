@@ -90,6 +90,7 @@ export class SnapshotNormalizer {
 				codeBlocks,
 				rawHtmlSnippet: normalizeText(message.rawHtmlSnippet),
 				nodeFingerprint: normalizeText(message.nodeFingerprint),
+				hasCompletionActions: message.hasCompletionActions ?? false,
 			});
 		}
 

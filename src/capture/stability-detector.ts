@@ -40,6 +40,15 @@ export class StabilityDetector {
 			};
 		}
 
+		if (lastMessage.hasCompletionActions) {
+			this.state.delete(snapshot.conversationKey);
+			return {
+				readyToPersist: true,
+				reason: "assistant-completion-actions-visible",
+				snapshot,
+			};
+		}
+
 		const currentState = this.state.get(snapshot.conversationKey) ?? {
 			conversationKey: snapshot.conversationKey,
 			stableRepeatCount: 0,

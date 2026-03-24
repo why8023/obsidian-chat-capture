@@ -190,6 +190,22 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
     return normalizeText(clone.innerText || clone.textContent || "");
   }
 
+  function hasCompletionActions(element) {
+    const selectors = [
+      "[data-testid='copy-turn-action-button']",
+      "[data-testid='good-response-turn-action-button']",
+      "[data-testid='bad-response-turn-action-button']",
+    ];
+
+    return selectors.some((selector) => {
+      try {
+        return Boolean(element.querySelector(selector));
+      } catch (error) {
+        return false;
+      }
+    });
+  }
+
   function getConversationTitle(messages) {
     const title = normalizeText(document.title.replace(/\\s+-\\s+ChatGPT$/i, ""));
     if (title) {
@@ -252,6 +268,7 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
         codeBlocks,
         rawHtmlSnippet: String(candidate.innerHTML ?? "").slice(0, maxHtmlSnippetLength),
         nodeFingerprint: hashString([role, text, JSON.stringify(codeBlocks)].join("|")),
+        hasCompletionActions: role === "assistant" ? hasCompletionActions(candidate) : false,
       });
       ordinal += 1;
     }

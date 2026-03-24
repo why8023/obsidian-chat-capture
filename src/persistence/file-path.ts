@@ -1,6 +1,7 @@
 import { normalizePath } from "obsidian";
 import { resolveSaveFolderForUrl } from "../settings/chat-targets";
 import type { NormalizedSnapshot, PluginSettings } from "../types";
+import { formatLocalDate } from "./date-format";
 
 export function sanitizeFileSegment(value: string): string {
 	const sanitized = value
@@ -16,7 +17,7 @@ export function buildConversationFilePath(
 	suffix = "",
 ): string {
 	const saveFolder = resolveSaveFolderForUrl(settings, snapshot.pageUrl);
-	const date = new Date(snapshot.capturedAt).toISOString().slice(0, 10);
+	const date = formatLocalDate(snapshot.capturedAt);
 	const shortKey = snapshot.conversationKey.slice(0, 8);
 	const title = sanitizeFileSegment(
 		snapshot.conversationTitle || snapshot.pageTitle || shortKey,

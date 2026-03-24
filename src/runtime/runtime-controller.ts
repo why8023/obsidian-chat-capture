@@ -404,9 +404,33 @@ export class RuntimeController {
 				});
 			}
 
-			if (merge.changed) {
-				await this.deps.markdownWriter.writeSnapshot(normalized, merge.entry);
-				this.deps.noteIndex.upsertFromSnapshot(normalized, merge.entry);
+			const rewriteFrontmatterTimestamps =
+				!merge.changed &&
+				(await this.deps.markdownWriter.needsFrontmatterTimestampRewrite(
+					merge.entry.filePath,
+				));
+			const persistedEntry =
+				rewriteFrontmatterTimestamps
+					? {
+							...merge.entry,
+							createdAt:
+								existingEntry?.createdAt ??
+								existingNote?.createdAt ??
+								merge.entry.createdAt,
+							updatedAt:
+								existingEntry?.updatedAt ??
+								existingNote?.updatedAt ??
+								merge.entry.updatedAt,
+							lastStableMessageCount:
+								existingEntry?.lastStableMessageCount ??
+								existingNote?.messageCount ??
+								merge.entry.lastStableMessageCount,
+						}
+					: merge.entry;
+
+			if (merge.changed || rewriteFrontmatterTimestamps) {
+				await this.deps.markdownWriter.writeSnapshot(normalized, persistedEntry);
+				this.deps.noteIndex.upsertFromSnapshot(normalized, persistedEntry);
 			}
 			if (merge.changed || merge.replacedKeys.length > 0) {
 				await this.deps.sessionIndex.commit(merge.entry, merge.replacedKeys);

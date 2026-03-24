@@ -4,6 +4,9 @@ import type { NormalizedSnapshot, PluginSettings, SessionIndexEntry } from "../t
 import { buildConversationFilePath } from "./file-path";
 import { renderConversationMarkdown } from "./frontmatter";
 
+const UTC_FRONTMATTER_TIMESTAMP_PATTERN =
+	/^(?:obar_created_at|obar_updated_at|created_at|updated_at):\s*(?:"[^"\n]*Z"|[^"\n]*Z)\s*$/m;
+
 function appendSuffixToPath(path: string, suffix: string): string {
 	return path.replace(/\.md$/i, ` ${suffix}.md`);
 }
@@ -63,6 +66,17 @@ export class MarkdownWriter {
 			messageCount: entry.lastStableMessageCount,
 		});
 		return file;
+	}
+
+	async needsFrontmatterTimestampRewrite(filePath: string): Promise<boolean> {
+		const existing = this.app.vault.getAbstractFileByPath(filePath);
+		if (!(existing instanceof TFile)) {
+			return false;
+		}
+
+		const content = await this.app.vault.cachedRead(existing);
+		const frontmatter = content.match(/^---\n([\s\S]*?)\n---(?:\n|$)/m)?.[1];
+		return frontmatter ? UTC_FRONTMATTER_TIMESTAMP_PATTERN.test(frontmatter) : false;
 	}
 
 	private async ensureFolder(filePath: string): Promise<void> {

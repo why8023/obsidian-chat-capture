@@ -6,6 +6,7 @@ import type {
 	PluginSettings,
 	SessionIndexEntry,
 } from "../types";
+import { formatLocalTimestamp } from "./date-format";
 
 const LEGACY_CONVERSATION_FRONTMATTER_KEYS = {
 	source: "source",
@@ -206,8 +207,8 @@ export function buildConversationFrontmatter(
 		[getConversationFrontmatterKey("source")]: snapshot.source,
 		[getConversationFrontmatterKey("conversationKey")]: snapshot.conversationKey,
 		[getConversationFrontmatterKey("chatUrl")]: snapshot.pageUrl,
-		[getConversationFrontmatterKey("createdAt")]: new Date(entry.createdAt).toISOString(),
-		[getConversationFrontmatterKey("updatedAt")]: new Date(entry.updatedAt).toISOString(),
+		[getConversationFrontmatterKey("createdAt")]: formatLocalTimestamp(entry.createdAt),
+		[getConversationFrontmatterKey("updatedAt")]: formatLocalTimestamp(entry.updatedAt),
 		[getConversationFrontmatterKey("messageCount")]: entry.lastStableMessageCount,
 		[getConversationFrontmatterKey("extractorVersion")]: snapshot.extractorVersion,
 		[getConversationFrontmatterKey("pageState")]: snapshot.pageState,

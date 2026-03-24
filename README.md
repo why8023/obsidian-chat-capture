@@ -2,7 +2,7 @@
 
 将 Obsidian 内置 **Web Viewer** 里的 ChatGPT 对话抓取为 Markdown 笔记，并持续增量更新。
 
-当前实现不是浏览器扩展，也不是通过网络 API 拉取聊天记录，而是由插件在 Obsidian 桌面端绑定一个 ChatGPT Web Viewer，向其中注入 DOM 抽取脚本，在页面内用 `MutationObserver` 维护脏状态和缓存快照，再由宿主用低频心跳拉取稳定结果，最终写回 Markdown 文件。
+当前实现不是浏览器扩展，也不是通过网络 API 拉取聊天记录，而是由插件在 Obsidian 桌面端绑定一个 ChatGPT Web Viewer，向其中注入轻量采集脚本，在页面内只维护“消息壳 + 内容 HTML”快照，再由宿主用低频心跳拉取结果，并在插件侧用 Defuddle 清洗成最终 Markdown 后写回文件。
 
 ## 功能概览
 
@@ -24,7 +24,7 @@
 - `src/webviewer/`
   负责打开 Web Viewer、绑定当前叶子、定位真正的 `webview` DOM 节点、恢复上次受控 viewer、监听导航和控制台事件。
 - `src/capture/`
-  负责构造注入脚本、在页面内抽取消息、规范化快照、判断回复是否稳定。
+  负责构造注入脚本、在页面内收集消息壳、用 Defuddle 解析消息内容、规范化快照、判断回复是否稳定。
 - `src/runtime/`
   负责自动采集主循环，包括绑定、注入、健康检查、事件驱动调度、回退重试、状态切换。
 - `src/persistence/`
@@ -94,17 +94,24 @@
 
 #### 4.2 DOM 抽取策略
 
-`src/capture/dom-extractor.ts` 当前仍然是纯 DOM 抽取方案，但运行模式已经改成“页面内观察变化 + 按需重建快照”，核心思路是：
+`src/capture/` 现在拆成了更清晰的两层：
 
-- 通过 `selector-profiles.ts` 中的候选选择器定位主区域和消息节点
+- 页面侧
+  - `page-probe.ts` 负责判断 `pageState`、标题和会话 ID
+  - `turn-shell-collector.ts` 只负责定位消息壳、识别角色、提取 `contentHtml`、动作信号和稳定 `domKey`
+- 插件侧
+  - `defuddle-adapter.ts` 用 `defuddle/node` + `linkedom` 把每条消息的 HTML 转成 Markdown
+
+页面内的运行模式仍然是“观察变化 + 按需重建快照”，但不再手写正文 Markdown 拼装。当前逻辑只做这些事：
+
+- 通过 `selector-profiles.ts` 的候选选择器定位主区域、消息节点和内容根节点
 - 对每个消息节点：
   - 识别角色 `user / assistant / system / unknown`
-  - 提取正文纯文本
-  - 提取代码块及语言标记
+  - 提取一个稳定 `domKey`
+  - 提取清理过 UI 噪声的 `contentHtml`
+  - 提取 `contentTextHint` 作为标题和兜底文本
   - 识别 Assistant 回复完成动作是否已出现
-  - 生成 markdown 近似内容
   - 截取一段 `rawHtmlSnippet` 供调试
-  - 生成节点指纹
 - 根据页面结构推断当前页面状态：
   - `login`
   - `chat-list`
@@ -115,23 +122,25 @@
 - `health()` 只返回轻量运行态，不主动重复扫描整页 DOM
 - `collect()` 在页面未变化时直接返回缓存快照
 
-当前默认 selector profile 是 `chatgpt-web-basic`，主要依赖：
+当前默认 selector profile 是 `chatgpt-web-basic`，选择器已经缩到最小必要范围，主要依赖：
 
 - `main`
 - `[data-message-author-role]`
 - `article[data-testid*='conversation-turn']`
-
-同时会主动移除按钮、SVG、脚本、隐藏节点等 UI 噪声，尽量只保留聊天正文和代码块。
+- `.markdown` / `.prose` / `[data-testid='conversation-turn-content']`
 
 ### 5. 归一化与会话标识
 
-原始 DOM 快照会进入 `src/capture/snapshot-normalizer.ts` 做统一归一化：
+原始 DOM 快照会进入 `src/capture/snapshot-normalizer.ts` 做统一归一化。这个阶段会按消息逐条调用 `DefuddleAdapter`，并按 `contentHtmlHash` 复用解析缓存，避免轮询时重复解析未变化内容。
 
 - 统一换行和空白字符
 - 清除零宽字符
 - 规范 role 和 pageState
+- 将每条消息的 `contentHtml` 转成最终 Markdown
+- 保留 plain text 作为标题和调试用途
 - 过滤空消息
 - 为每条消息计算：
+  - `domKey`
   - `textHash`
   - `uid`
 - 为整份快照计算：
@@ -141,7 +150,8 @@
 其中：
 
 - `conversationKey` 用来识别同一会话
-- `uid` 用来识别消息在序列中的稳定身份
+- `uid` 基于 `domKey` 生成，用来识别消息在序列中的稳定身份
+- `textHash` 基于最终 Markdown 生成，用来表示消息内容是否变化
 - `snapshotHash` 用来判断当前快照是否与上次完全一致
 
 这层的作用是把“页面 DOM 形态”转换成“稳定的数据模型”，为后续增量写入提供基础。
@@ -318,7 +328,8 @@ page_state: "conversation"
 - 仅支持桌面端 Obsidian
 - 仅支持通过 Obsidian Web Viewer 打开的 ChatGPT 页面
 - 仅匹配 `chatgpt.com` 和 `chat.openai.com`
-- 页面抽取依赖 DOM 结构和选择器，ChatGPT 前端大改版后可能需要更新 selector profile
+- 页面抽取仍然依赖 DOM 结构和选择器，ChatGPT 前端大改版后可能需要更新 selector profile
+- Defuddle 解决的是“消息内容清洗”，不会替代消息边界识别、角色识别和完成态识别
 - 自动采集现在是“页面内 MutationObserver 驱动 + 宿主低频心跳”的混合模式，不再持续高频空轮询
 - Markdown 写入以“整篇重建当前稳定快照”为主，不保留历史版本差异
 - 目前没有针对图片、附件、复杂富文本、分支对话树做专门建模
@@ -330,9 +341,12 @@ src/
   capture/
     bootstrap-script.ts
     dom-extractor.ts
+    defuddle-adapter.ts
+    page-probe.ts
     selector-profiles.ts
     snapshot-normalizer.ts
     stability-detector.ts
+    turn-shell-collector.ts
   commands/
     bind-current-viewer.ts
     index.ts

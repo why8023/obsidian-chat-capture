@@ -3,6 +3,7 @@ export interface SelectorProfileDefinition {
 	description: string;
 	mainCandidates: string[];
 	messageCandidates: string[];
+	contentRootCandidates: string[];
 	userRoleHints: string[];
 	assistantRoleHints: string[];
 	systemRoleHints: string[];
@@ -23,6 +24,14 @@ export const DEFAULT_SELECTOR_PROFILES: SelectorProfileDefinition[] = [
 			"article[data-testid*='conversation-turn']",
 			"main article",
 			"main [data-testid^='conversation-turn']",
+		],
+		contentRootCandidates: [
+			"[data-testid='conversation-turn-content']",
+			"[data-testid='conversation-turn-content'] .markdown",
+			"[data-testid='conversation-turn-content'] .prose",
+			".markdown",
+			".prose",
+			"[dir='auto']",
 		],
 		userRoleHints: ["user", "you"],
 		assistantRoleHints: ["assistant", "chatgpt", "gpt", "model"],

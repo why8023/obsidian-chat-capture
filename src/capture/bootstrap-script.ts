@@ -115,7 +115,7 @@ return {
   value,
   diagnostics: buildDiagnostics({
     pageState: value?.pageState ?? null,
-    messageCount: Array.isArray(value?.messages) ? value.messages.length : null,
+    messageCount: Array.isArray(value?.turns) ? value.turns.length : null,
     dirty: false,
     pendingUpdate: false,
   }),

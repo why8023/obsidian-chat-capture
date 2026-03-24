@@ -1,0 +1,32 @@
+export function buildPageProbeSource(): string {
+	return `
+  function getDocumentConversationTitle() {
+    const normalized = normalizeText(document.title.replace(/\\s+-\\s+ChatGPT$/i, ""));
+    if (!normalized || /^chatgpt$/i.test(normalized)) {
+      return "";
+    }
+    return normalized;
+  }
+
+  function getConversationIdFromUrl() {
+    const match = location.pathname.match(/\\/c\\/([^/?#]+)/i);
+    return normalizeText(match?.[1] ?? "");
+  }
+
+  function detectPageState(turns) {
+    if (
+      document.querySelector("input[type='password']") ||
+      /login|auth|signin/i.test(location.pathname)
+    ) {
+      return "login";
+    }
+    if (turns.length > 0) {
+      return "conversation";
+    }
+    if (document.querySelector("nav a[href*='/c/']")) {
+      return "chat-list";
+    }
+    return "unknown";
+  }
+`.trim();
+}

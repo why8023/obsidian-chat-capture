@@ -38,20 +38,20 @@ export interface ControlledViewerRef {
 	lastSeenAt: number;
 }
 
-export interface CodeBlock {
-	language?: string;
-	code: string;
+export interface TurnActionFlags {
+	hasCopyButton: boolean;
+	hasThumbActions: boolean;
 }
 
-export interface ChatMessageSnapshot {
+export interface RawTurnShell {
 	ordinal: number;
 	role: ChatMessageRole;
-	text: string;
-	markdownApprox?: string;
-	codeBlocks?: CodeBlock[];
+	domKey: string;
+	contentHtml: string;
+	contentHtmlHash?: string;
+	contentTextHint?: string;
 	rawHtmlSnippet?: string;
-	nodeFingerprint?: string;
-	hasCompletionActions?: boolean;
+	actionFlags?: Partial<TurnActionFlags>;
 }
 
 export interface ConversationSnapshot {
@@ -60,10 +60,10 @@ export interface ConversationSnapshot {
 	pageUrl: string;
 	pageTitle: string;
 	capturedAt: string;
-	conversationKey?: string;
+	conversationId?: string;
 	conversationTitle?: string;
 	pageState: PageState;
-	messages: ChatMessageSnapshot[];
+	turns: RawTurnShell[];
 }
 
 export interface NormalizedMessage {
@@ -71,10 +71,12 @@ export interface NormalizedMessage {
 	ordinal: number;
 	role: ChatMessageRole;
 	text: string;
+	markdown: string;
 	textHash: string;
-	codeBlocks: CodeBlock[];
+	domKey: string;
+	contentHtmlHash: string;
 	rawHtmlSnippet?: string;
-	nodeFingerprint?: string;
+	actionFlags: TurnActionFlags;
 	hasCompletionActions: boolean;
 }
 

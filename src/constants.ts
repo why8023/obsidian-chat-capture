@@ -1,6 +1,6 @@
 import type { PluginSettings, PluginStateData } from "./types";
 
-export const EXTRACTOR_VERSION = "0.2.0";
+export const EXTRACTOR_VERSION = "0.3.0";
 export const PLUGIN_STATE_VERSION = "1";
 export const LOG_BUFFER_LIMIT = 500;
 

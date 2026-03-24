@@ -1,11 +1,12 @@
 import { createHash } from "crypto";
+import { DefuddleAdapter } from "./defuddle-adapter";
 import type {
 	ChatMessageRole,
-	CodeBlock,
 	ConversationSnapshot,
 	NormalizedMessage,
 	NormalizedSnapshot,
 	PageState,
+	TurnActionFlags,
 } from "../types";
 
 function hashString(value: string): string {
@@ -20,6 +21,18 @@ function normalizeText(value: string | undefined): string {
 		.replace(/[ \t]+\n/g, "\n")
 		.replace(/\n{3,}/g, "\n\n")
 		.trim();
+}
+
+function normalizeMarkdown(value: string | undefined): string {
+	return String(value ?? "")
+		.replace(/\r\n/g, "\n")
+		.replace(/[\u200B-\u200D\uFEFF]/g, "")
+		.replace(/\u00A0/g, " ")
+		.trim();
+}
+
+function normalizeSnippet(value: string | undefined): string {
+	return String(value ?? "").replace(/\r\n/g, "\n").trim();
 }
 
 function normalizeRole(role: string | undefined): ChatMessageRole {
@@ -44,77 +57,92 @@ function normalizePageState(state: string | undefined): PageState {
 	}
 }
 
-function normalizeCodeBlocks(blocks?: CodeBlock[]): CodeBlock[] {
-	return (blocks ?? [])
-		.map((block) => ({
-			language: normalizeText(block.language),
-			code: String(block.code ?? "")
-				.replace(/\r\n/g, "\n")
-				.replace(/[\u200B-\u200D\uFEFF]/g, "")
-				.replace(/\u00A0/g, " "),
-		}))
-		.filter((block) => block.code.trim().length > 0);
+function normalizeActionFlags(flags?: Partial<TurnActionFlags>): TurnActionFlags {
+	return {
+		hasCopyButton: flags?.hasCopyButton ?? false,
+		hasThumbActions: flags?.hasThumbActions ?? false,
+	};
+}
+
+function extractConversationId(snapshot: ConversationSnapshot): string {
+	const direct = normalizeText(snapshot.conversationId);
+	if (direct) {
+		return direct;
+	}
+
+	const match = snapshot.pageUrl.match(/\/c\/([^/?#]+)/i);
+	return normalizeText(match?.[1] ?? "");
+}
+
+function normalizeConversationTitle(snapshot: ConversationSnapshot, firstUserText: string): string {
+	const pageTitle = normalizeText(snapshot.pageTitle.replace(/\s+-\s+ChatGPT$/i, ""));
+	return (
+		normalizeText(snapshot.conversationTitle) ||
+		pageTitle ||
+		normalizeText(firstUserText).slice(0, 80) ||
+		"Untitled conversation"
+	);
 }
 
 export class SnapshotNormalizer {
-	normalize(snapshot: ConversationSnapshot): NormalizedSnapshot {
+	constructor(private readonly defuddleAdapter = new DefuddleAdapter()) {}
+
+	async normalize(snapshot: ConversationSnapshot): Promise<NormalizedSnapshot> {
 		const normalizedMessages: NormalizedMessage[] = [];
 
-		for (const [index, message] of snapshot.messages.entries()) {
-			const role = normalizeRole(message.role);
-			const text = normalizeText(message.text || message.markdownApprox);
-			const codeBlocks = normalizeCodeBlocks(message.codeBlocks);
-			if (!text && codeBlocks.length === 0) {
+		for (const [index, turn] of snapshot.turns.entries()) {
+			const role = normalizeRole(turn.role);
+			const parsed = await this.defuddleAdapter.parseTurn(turn, snapshot.pageUrl);
+			const markdown = normalizeMarkdown(parsed.markdown);
+			const text = normalizeText(parsed.text || markdown);
+			if (!markdown && !text) {
 				continue;
 			}
 
 			const previousUid = normalizedMessages.at(-1)?.uid ?? "";
-			const textHash = hashString(
-				[text, ...codeBlocks.map((block) => `${block.language ?? ""}\n${block.code}`)].join(
-					"\n\n",
-				),
-			);
+			const domKey =
+				normalizeText(turn.domKey) ||
+				hashString(`${role}|${turn.contentHtmlHash ?? ""}|${index + 1}`);
+			const contentHtmlHash =
+				normalizeText(turn.contentHtmlHash) || hashString(turn.contentHtml);
+			const textHash = hashString(markdown || text);
 			const uid = hashString(
-				[
-					String(index + 1),
-					role,
-					text,
-					codeBlocks.map((block) => `${block.language ?? ""}:${block.code}`).join("|"),
-					previousUid,
-				].join("|"),
+				[String(index + 1), role, domKey, previousUid].join("|"),
 			);
+			const actionFlags = normalizeActionFlags(turn.actionFlags);
 
 			normalizedMessages.push({
 				uid,
 				ordinal: normalizedMessages.length + 1,
 				role,
 				text,
+				markdown: markdown || text,
 				textHash,
-				codeBlocks,
-				rawHtmlSnippet: normalizeText(message.rawHtmlSnippet),
-				nodeFingerprint: normalizeText(message.nodeFingerprint),
-				hasCompletionActions: message.hasCompletionActions ?? false,
+				domKey,
+				contentHtmlHash,
+				rawHtmlSnippet: normalizeSnippet(turn.rawHtmlSnippet),
+				actionFlags,
+				hasCompletionActions:
+					actionFlags.hasCopyButton || actionFlags.hasThumbActions,
 			});
 		}
 
-		const firstUserTextHash =
-			normalizedMessages.find((message) => message.role === "user")?.textHash ?? "";
-		const conversationTitle =
-			normalizeText(snapshot.conversationTitle) ||
-			normalizeText(snapshot.pageTitle.replace(/\s+-\s+ChatGPT$/i, "")) ||
-			"Untitled conversation";
-		const conversationKey =
-			normalizeText(snapshot.conversationKey) ||
-			hashString(`${snapshot.pageUrl}|${conversationTitle}|${firstUserTextHash}`);
+		const firstUserMessage = normalizedMessages.find((message) => message.role === "user");
+		const conversationTitle = normalizeConversationTitle(
+			snapshot,
+			firstUserMessage?.text ?? "",
+		);
+		const conversationId = extractConversationId(snapshot);
+		const firstUserTextHash = firstUserMessage?.textHash ?? "";
+		const conversationKey = conversationId
+			? hashString(`conversation-id|${conversationId}`)
+			: hashString(`${snapshot.pageUrl}|${conversationTitle}|${firstUserTextHash}`);
 		const snapshotHash = hashString(
 			[
 				conversationKey,
 				snapshot.pageUrl,
 				...normalizedMessages.map(
-					(message) =>
-						`${message.uid}|${message.textHash}|${message.codeBlocks
-							.map((block) => `${block.language ?? ""}:${block.code}`)
-							.join("||")}`,
+					(message) => `${message.uid}|${message.textHash}|${message.domKey}`,
 				),
 			].join("::"),
 		);

@@ -26,29 +26,13 @@ function headingForRole(role: ChatMessageRole): string {
 	}
 }
 
-function codeFenceFor(code: string): string {
-	const longestRun = Math.max(
-		3,
-		...[...code.matchAll(/`+/g)].map((match) => match[0].length + 1),
-	);
-	return "`".repeat(longestRun);
-}
-
 export function renderMessageMarkdown(message: NormalizedMessage): string {
 	const lines: string[] = [`## ${headingForRole(message.role)}`];
 
-	if (message.text) {
+	if (message.markdown) {
+		lines.push(message.markdown);
+	} else if (message.text) {
 		lines.push(message.text);
-	}
-
-	for (const block of message.codeBlocks) {
-		if (lines.at(-1) !== "") {
-			lines.push("");
-		}
-		const fence = codeFenceFor(block.code);
-		lines.push(`${fence}${block.language ?? ""}`.trimEnd());
-		lines.push(block.code);
-		lines.push(fence);
 	}
 
 	return lines.join("\n");

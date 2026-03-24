@@ -271,8 +271,7 @@ export class RuntimeController {
 			this.logDebug("Capture collect completed", {
 				leafId: binding.leafId,
 				diagnostics,
-				messageCount:
-					Array.isArray(rawSnapshot?.messages) ? rawSnapshot.messages.length : 0,
+				messageCount: Array.isArray(rawSnapshot?.turns) ? rawSnapshot.turns.length : 0,
 			});
 
 			if (!rawSnapshot) {
@@ -289,7 +288,7 @@ export class RuntimeController {
 
 			captureStage = "normalize";
 			await this.deps.debugDump.writeSnapshot("last-raw-snapshot", rawSnapshot);
-			const normalized = this.deps.normalizer.normalize(rawSnapshot);
+			const normalized = await this.deps.normalizer.normalize(rawSnapshot);
 			await this.deps.debugDump.writeSnapshot("last-normalized-snapshot", normalized);
 
 			captureStage = "stability-check";

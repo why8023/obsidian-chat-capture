@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	chatgptUrl: "https://chatgpt.com/",
 	saveFolder: "OBAR Chats",
 	fileNameTemplate: "{{date}} {{title}}",
+	conversationRoundSeparator: "---",
 	pollIntervalMs: 1500,
 	settleRepeatCount: 2,
 	settleTimeoutMs: 3000,

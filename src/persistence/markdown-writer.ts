@@ -46,7 +46,7 @@ export class MarkdownWriter {
 		snapshot: NormalizedSnapshot,
 		entry: SessionIndexEntry,
 	): Promise<TFile> {
-		const content = renderConversationMarkdown(snapshot, entry);
+		const content = renderConversationMarkdown(snapshot, entry, this.getSettings());
 		await this.ensureFolder(entry.filePath);
 
 		const existing = this.app.vault.getAbstractFileByPath(entry.filePath);

@@ -22,6 +22,7 @@ export interface PluginSettings {
 	chatgptUrl: string;
 	saveFolder: string;
 	fileNameTemplate: string;
+	conversationRoundSeparator: string;
 	pollIntervalMs: number;
 	settleRepeatCount: number;
 	settleTimeoutMs: number;

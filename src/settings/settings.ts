@@ -31,6 +31,17 @@ function normalizeTemplate(input: string | undefined, fallback: string): string 
 	return template || fallback;
 }
 
+function normalizeConversationRoundSeparator(
+	input: string | undefined,
+	fallback: string,
+): string {
+	if (input === undefined) {
+		return fallback;
+	}
+
+	return input.trim();
+}
+
 function normalizeUrl(input: string | undefined, fallback: string): string {
 	const value = (input ?? fallback).trim();
 	if (!value.startsWith("http://") && !value.startsWith("https://")) {
@@ -49,6 +60,10 @@ export function normalizePluginSettings(
 		fileNameTemplate: normalizeTemplate(
 			data?.fileNameTemplate,
 			DEFAULT_SETTINGS.fileNameTemplate,
+		),
+		conversationRoundSeparator: normalizeConversationRoundSeparator(
+			data?.conversationRoundSeparator,
+			DEFAULT_SETTINGS.conversationRoundSeparator,
 		),
 		pollIntervalMs: clampInteger(
 			data?.pollIntervalMs,

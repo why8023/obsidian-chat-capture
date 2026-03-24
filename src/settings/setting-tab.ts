@@ -31,6 +31,15 @@ export class ObarSettingTab extends PluginSettingTab {
 			},
 		);
 
+		this.addSectionHeading(copy.sections.output);
+		this.addTextSetting(
+			copy.fields.conversationRoundSeparator,
+			this.plugin.settings.conversationRoundSeparator,
+			async (value) => {
+				await this.plugin.updateSettings({ conversationRoundSeparator: value });
+			},
+		);
+
 		this.addSectionHeading(copy.sections.capture);
 		this.addToggleSetting(
 			copy.fields.autoCapture,

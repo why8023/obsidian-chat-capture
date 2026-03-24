@@ -9,6 +9,7 @@ interface SettingText {
 export interface SettingsTabCopy {
 	sections: {
 		general: string;
+		output: string;
 		capture: string;
 		debug: string;
 	};
@@ -16,6 +17,7 @@ export interface SettingsTabCopy {
 		chatUrl: SettingText;
 		saveFolder: SettingText;
 		fileNameTemplate: SettingText;
+		conversationRoundSeparator: SettingText;
 		pollIntervalMs: SettingText;
 		settleRepeatCount: SettingText;
 		settleTimeoutMs: SettingText;
@@ -29,6 +31,7 @@ export interface SettingsTabCopy {
 const ENGLISH_COPY: SettingsTabCopy = {
 	sections: {
 		general: "General",
+		output: "Output format",
 		capture: "Automatic capture",
 		debug: "Debug and diagnostics",
 	},
@@ -47,6 +50,12 @@ const ENGLISH_COPY: SettingsTabCopy = {
 			name: "File name template",
 			description: "Use {{date}}, {{title}}, and {{key}} placeholders.",
 			placeholder: "{{date}} {{title}}",
+		},
+		conversationRoundSeparator: {
+			name: "Conversation separator",
+			description:
+				"Inserted before each new USER turn. Use --- for a Markdown horizontal rule. Leave blank to disable it.",
+			placeholder: "---",
 		},
 		pollIntervalMs: {
 			name: "Poll interval",
@@ -89,6 +98,7 @@ const ENGLISH_COPY: SettingsTabCopy = {
 const CHINESE_COPY: SettingsTabCopy = {
 	sections: {
 		general: "常规",
+		output: "导出格式",
 		capture: "自动采集",
 		debug: "调试与诊断",
 	},
@@ -107,6 +117,12 @@ const CHINESE_COPY: SettingsTabCopy = {
 			name: "文件名模板",
 			description: "支持 {{date}}、{{title}} 和 {{key}} 占位符。",
 			placeholder: "{{date}} {{title}}",
+		},
+		conversationRoundSeparator: {
+			name: "对话分隔符",
+			description:
+				"在每个新 USER 轮次前插入。使用 --- 可生成 Markdown 水平线，留空则关闭。",
+			placeholder: "---",
 		},
 		pollIntervalMs: {
 			name: "轮询间隔",

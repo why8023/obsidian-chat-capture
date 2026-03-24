@@ -273,16 +273,22 @@ obar_extractor_version: "0.1.0"
 obar_page_state: "conversation"
 ---
 
-# 会话标题
-
-## User
+# USER
 ...
 
-## Assistant
+## 用户正文里的一级标题会自动下调
+...
+
+# AI
+...
+
+---
+
+# USER
 ...
 ```
 
-代码块会保留 fenced code block，并尽量保留语言标记。
+代码块会保留 fenced code block，并尽量保留语言标记。为了让一级标题始终由 `USER / AI` 占用，消息正文里的 Markdown 标题会整体下调一级；每个新一轮 `USER` 开始前还可以插入可配置的分隔符，默认是 `---`。
 
 ### 10. 设置与命令
 
@@ -291,6 +297,7 @@ obar_page_state: "conversation"
 - Chat URL
 - Save folder
 - File name template
+- Conversation separator
 - Poll interval
 - Settle repeat count
 - Settle timeout

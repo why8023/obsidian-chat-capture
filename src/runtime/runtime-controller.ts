@@ -4,7 +4,7 @@ import {
 	HEALTHCHECK_SCRIPT,
 	type HealthcheckResult,
 } from "../capture/bootstrap-script";
-import { EXTRACTOR_VERSION } from "../constants";
+import { EXTRACTOR_VERSION, formatObarUiText } from "../constants";
 import { StabilityDetector } from "../capture/stability-detector";
 import type { SnapshotNormalizer } from "../capture/snapshot-normalizer";
 import { DebugDumpWriter } from "../debug/debug-dump";
@@ -13,6 +13,7 @@ import { ConversationNoteIndex } from "../persistence/conversation-note-index";
 import { MarkdownWriter } from "../persistence/markdown-writer";
 import { SessionIndex } from "../persistence/session-index";
 import type {
+	CaptureRunResult,
 	CaptureDiagnostics,
 	ConversationSnapshot,
 	PluginSettings,
@@ -51,6 +52,7 @@ interface RuntimeControllerDeps {
 	debugDump: DebugDumpWriter;
 	logger: Logger;
 	onStatusChange: (status: string) => void;
+	onCaptureResult: (result: CaptureRunResult) => void;
 }
 
 interface BootstrapState {
@@ -76,7 +78,7 @@ export class RuntimeController {
 			return;
 		}
 
-		this.deps.onStatusChange("Chat capture: paused");
+		this.deps.onStatusChange(formatObarUiText("paused"));
 	}
 
 	async handleLayoutChange(): Promise<void> {
@@ -109,7 +111,7 @@ export class RuntimeController {
 		}
 
 		this.clearTimer();
-		this.deps.onStatusChange("Chat capture: paused");
+		this.deps.onStatusChange(formatObarUiText("paused"));
 	}
 
 	async pause(reason: string): Promise<void> {
@@ -119,7 +121,7 @@ export class RuntimeController {
 		this.stateMachine.force("idle");
 		this.awaitingStability = false;
 		this.deps.logger.info("Auto capture paused", { reason });
-		this.deps.onStatusChange("Chat capture: paused");
+		this.deps.onStatusChange(formatObarUiText("paused"));
 	}
 
 	async resume(reason: string): Promise<void> {
@@ -161,7 +163,7 @@ export class RuntimeController {
 		this.scheduleNextTick(delay);
 	}
 
-	async saveSnapshotNow(): Promise<boolean> {
+	async saveSnapshotNow(): Promise<CaptureRunResult> {
 		return this.captureOnce(true);
 	}
 
@@ -183,15 +185,21 @@ export class RuntimeController {
 		}
 	}
 
-	private async captureOnce(forcePersist: boolean): Promise<boolean> {
+	private async captureOnce(forcePersist: boolean): Promise<CaptureRunResult> {
 		if (this.isTicking) {
-			return false;
+			return this.reportResult({
+				status: "busy",
+				statusMessage: formatObarUiText("waiting for the current capture cycle"),
+			});
 		}
 		if (
 			!forcePersist &&
 			(this.deps.state().capturePaused || !this.deps.settings().autoCapture)
 		) {
-			return false;
+			return this.reportResult({
+				status: "paused",
+				statusMessage: formatObarUiText("paused"),
+			});
 		}
 
 		this.isTicking = true;
@@ -210,8 +218,12 @@ export class RuntimeController {
 				nextDelay = this.deps.viewerManager.isAnyTrackedLeafActive()
 					? Math.min(this.deps.settings().pollIntervalMs, 1_000)
 					: this.backgroundIdleDelay();
-				this.deps.onStatusChange("Chat capture: no matching Web Viewer found");
-				return false;
+				const statusMessage = formatObarUiText("no matching Web Viewer found");
+				this.deps.onStatusChange(statusMessage);
+				return this.reportResult({
+					status: "no-matching-viewer",
+					statusMessage,
+				});
 			}
 
 			activeLeaf = this.deps.viewerManager.isLeafActive(binding.leafId);
@@ -237,8 +249,12 @@ export class RuntimeController {
 			if (!forcePersist && !this.shouldCollectSnapshot(health)) {
 				this.failureCount = 0;
 				this.stateMachine.force("polling");
-				this.deps.onStatusChange("Chat capture: watching for page changes");
-				return false;
+				const statusMessage = formatObarUiText("watching for page changes");
+				this.deps.onStatusChange(statusMessage);
+				return this.reportResult({
+					status: "watching-for-page-changes",
+					statusMessage,
+				});
 			}
 
 			this.stateMachine.force("polling");
@@ -276,8 +292,12 @@ export class RuntimeController {
 				});
 				this.awaitingStability = false;
 				nextDelay = this.nextIntervalFor(health, activeLeaf, this.awaitingStability);
-				this.deps.onStatusChange("Chat capture: collect returned no snapshot");
-				return false;
+				const statusMessage = formatObarUiText("collect returned no snapshot");
+				this.deps.onStatusChange(statusMessage);
+				return this.reportResult({
+					status: "collect-returned-no-snapshot",
+					statusMessage,
+				});
 			}
 
 			captureStage = "normalize";
@@ -303,8 +323,12 @@ export class RuntimeController {
 					activeLeaf,
 					this.awaitingStability,
 				);
-				this.deps.onStatusChange("Chat capture: no messages detected");
-				return false;
+				const statusMessage = formatObarUiText("no messages detected");
+				this.deps.onStatusChange(statusMessage);
+				return this.reportResult({
+					status: "no-messages",
+					statusMessage,
+				});
 			}
 
 			const stability = this.stabilityDetector.accept(normalized, this.deps.settings(), {
@@ -328,8 +352,12 @@ export class RuntimeController {
 					reason: stability.reason,
 					messageCount: normalized.messages.length,
 				});
-				this.deps.onStatusChange("Chat capture: waiting for stable reply");
-				return false;
+				const statusMessage = formatObarUiText("waiting for stable reply");
+				this.deps.onStatusChange(statusMessage);
+				return this.reportResult({
+					status: "waiting-for-stable-reply",
+					statusMessage,
+				});
 			}
 
 			if (
@@ -339,8 +367,12 @@ export class RuntimeController {
 				!this.deps.sessionIndex.get(normalized.conversationKey)
 			) {
 				nextDelay = Math.min(this.deps.settings().pollIntervalMs, 1_000);
-				this.deps.onStatusChange("Chat capture: waiting for conversation id");
-				return false;
+				const statusMessage = formatObarUiText("waiting for conversation id");
+				this.deps.onStatusChange(statusMessage);
+				return this.reportResult({
+					status: "waiting-for-conversation-id",
+					statusMessage,
+				});
 			}
 
 			this.stateMachine.force("saving");
@@ -364,8 +396,12 @@ export class RuntimeController {
 					reason: merge.skipReason,
 				});
 				this.awaitingStability = false;
-				this.deps.onStatusChange("Chat capture: skipped regressive snapshot");
-				return false;
+				const statusMessage = formatObarUiText("skipped regressive snapshot");
+				this.deps.onStatusChange(statusMessage);
+				return this.reportResult({
+					status: "skipped-regressive-snapshot",
+					statusMessage,
+				});
 			}
 
 			if (merge.changed) {
@@ -378,12 +414,28 @@ export class RuntimeController {
 
 			this.failureCount = 0;
 			this.awaitingStability = false;
-			this.deps.onStatusChange(
-				merge.changed
-					? `Chat capture: saved ${merge.entry.lastStableMessageCount} messages`
-					: "Chat capture: up to date",
-			);
-			return merge.changed;
+			if (merge.changed) {
+				const statusMessage = formatObarUiText(
+					`saved ${merge.entry.lastStableMessageCount} messages`,
+				);
+				this.deps.onStatusChange(statusMessage);
+				return this.reportResult({
+					status: "saved",
+					statusMessage,
+					filePath: merge.entry.filePath,
+					messageCount: merge.entry.lastStableMessageCount,
+					created: merge.created,
+					newMessageCount: merge.newMessages.length,
+					title: merge.entry.title,
+				});
+			}
+
+			const statusMessage = formatObarUiText("up to date");
+			this.deps.onStatusChange(statusMessage);
+			return this.reportResult({
+				status: "up-to-date",
+				statusMessage,
+			});
 		} catch (error) {
 			this.failureCount += 1;
 			const backoffDelay = Math.min(
@@ -418,8 +470,16 @@ export class RuntimeController {
 				recentLogs: this.deps.logger.getEntries(50),
 				capturedAt: new Date().toISOString(),
 			});
-			this.deps.onStatusChange("Chat capture: retrying after error");
-			return false;
+			const statusMessage = forcePersist
+				? formatObarUiText("failed")
+				: formatObarUiText("retrying after error");
+			this.deps.onStatusChange(statusMessage);
+			return this.reportResult({
+				status: "error",
+				statusMessage,
+				stage: errorContext.stage,
+				error: serializedError,
+			});
 		} finally {
 			this.isTicking = false;
 			if (!forcePersist) {
@@ -659,6 +719,11 @@ export class RuntimeController {
 		return {
 			message: String(error),
 		};
+	}
+
+	private reportResult<T extends CaptureRunResult>(result: T): T {
+		this.deps.onCaptureResult(result);
+		return result;
 	}
 
 	private logDebug(message: string, context?: unknown): void {

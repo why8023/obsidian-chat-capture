@@ -3,6 +3,7 @@ import type { PluginSettings, PluginStateData } from "./types";
 export const EXTRACTOR_VERSION = "0.3.0";
 export const LOG_BUFFER_LIMIT = 500;
 export const OBAR_CAPTURE_SOURCE = "obar-chatgpt-webviewer";
+export const OBAR_UI_PREFIX = "OBAR";
 
 export const DEFAULT_CHAT_TARGET_URL_PATTERN = "https://chatgpt.com/";
 export const DEFAULT_CHAT_TARGET_SAVE_FOLDER = "chatgpt";
@@ -29,3 +30,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 export const DEFAULT_PLUGIN_STATE: PluginStateData = {
 	capturePaused: false,
 };
+
+export function formatObarUiText(message: string): string {
+	return `${OBAR_UI_PREFIX}: ${message}`;
+}

@@ -3,6 +3,7 @@ import {
 	DEFAULT_PLUGIN_STATE,
 	DEFAULT_SETTINGS,
 	LOG_BUFFER_LIMIT,
+	formatObarUiText,
 } from "./constants";
 import { registerCommands } from "./commands";
 import { SnapshotNormalizer } from "./capture/snapshot-normalizer";
@@ -18,7 +19,9 @@ import {
 } from "./settings/chat-targets";
 import { normalizePersistedData, normalizePluginSettings } from "./settings/settings";
 import { ObarSettingTab } from "./settings/setting-tab";
+import { CaptureNoticeManager } from "./ui/capture-notice-manager";
 import type {
+	CaptureRunResult,
 	PersistedPluginData,
 	PluginSettings,
 	PluginStateData,
@@ -35,6 +38,7 @@ export default class ObarPlugin extends Plugin {
 	markdownWriter!: MarkdownWriter;
 	viewerManager!: ViewerManager;
 	runtime!: RuntimeController;
+	captureNotices!: CaptureNoticeManager;
 	private statusBarEl!: HTMLElement;
 
 	async onload(): Promise<void> {
@@ -59,6 +63,7 @@ export default class ObarPlugin extends Plugin {
 			() => this.settings,
 			this.logger,
 		);
+		this.captureNotices = new CaptureNoticeManager();
 		this.viewerManager = new ViewerManager(
 			this.app,
 			() => this.settings,
@@ -76,13 +81,14 @@ export default class ObarPlugin extends Plugin {
 			debugDump: this.debugDump,
 			logger: this.logger,
 			onStatusChange: (status) => this.setStatus(status),
+			onCaptureResult: (result) => this.captureNotices.handleCaptureResult(result),
 		});
 		this.viewerManager.setActivityHandler((activity) => {
 			this.runtime.handleWebviewActivity(activity);
 		});
 
 		this.statusBarEl = this.addStatusBarItem();
-		this.setStatus("OBAR: idle");
+		this.setStatus(formatObarUiText("idle"));
 
 		this.addRibbonIcon("messages-square", "Open configured chat web viewer", () => {
 			void this.openConfiguredChatViewer();
@@ -144,58 +150,63 @@ export default class ObarPlugin extends Plugin {
 	onunload(): void {
 		this.runtime?.stop();
 		this.viewerManager?.dispose();
+		this.captureNotices?.dispose();
 	}
 
 	async openConfiguredChatViewer(): Promise<void> {
 		const target = getPrimaryChatTarget(this.settings);
 		if (!target) {
-			new Notice("No active chat URL rule is configured.");
+			new Notice(formatObarUiText("No active chat URL rule is configured."));
 			return;
 		}
 
 		const leaf = await this.viewerManager.openUrlInWebViewer(target.urlPattern);
 		await this.viewerManager.bindLeaf(leaf);
-		this.setStatus("OBAR: viewer opened");
+		this.setStatus(formatObarUiText("viewer opened"));
 		if (this.settings.autoCapture && !this.state.capturePaused) {
 			await this.runtime.resume("viewer-opened");
 		}
-		new Notice("Opened the configured chat web viewer.");
+		new Notice(formatObarUiText("Opened the configured chat web viewer."));
 	}
 
 	async bindCurrentViewer(): Promise<boolean> {
 		const ref = await this.viewerManager.bindActiveCompatibleViewer();
 		if (!ref) {
-			new Notice("Active tab does not match any configured chat URL rule.");
+			new Notice(
+				formatObarUiText("Active tab does not match any configured chat URL rule."),
+			);
 			return false;
 		}
 
-		this.setStatus("OBAR: viewer bound");
+		this.setStatus(formatObarUiText("viewer bound"));
 		if (this.settings.autoCapture && !this.state.capturePaused) {
 			await this.runtime.resume("viewer-bound");
 		}
-		new Notice("Bound the active web viewer.");
+		new Notice(formatObarUiText("Bound the active web viewer."));
 		return true;
 	}
 
-	async saveSnapshotNow(): Promise<boolean> {
-		const saved = await this.runtime.saveSnapshotNow();
-		new Notice(saved ? "Current snapshot saved." : "No snapshot was saved.");
-		return saved;
+	async saveSnapshotNow(): Promise<CaptureRunResult> {
+		const result = await this.runtime.saveSnapshotNow();
+		if (result.status !== "saved" && result.status !== "error") {
+			new Notice(result.statusMessage);
+		}
+		return result;
 	}
 
 	async pauseAutoCapture(): Promise<void> {
 		await this.runtime.pause("command");
-		new Notice("Auto capture paused.");
+		new Notice(formatObarUiText("Auto capture paused."));
 	}
 
 	async resumeAutoCapture(): Promise<void> {
 		if (!this.settings.autoCapture) {
-			new Notice("Auto capture is disabled in settings.");
+			new Notice(formatObarUiText("Auto capture is disabled in settings."));
 			return;
 		}
 
 		await this.runtime.resume("command");
-		new Notice("Auto capture resumed.");
+		new Notice(formatObarUiText("Auto capture resumed."));
 	}
 
 	async updateSettings(patch: Partial<PluginSettings>): Promise<void> {

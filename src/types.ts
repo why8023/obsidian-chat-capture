@@ -207,6 +207,49 @@ export interface SerializedError {
 	stack?: string;
 }
 
+export type CaptureRunStatus =
+	| "saved"
+	| "up-to-date"
+	| "busy"
+	| "paused"
+	| "no-matching-viewer"
+	| "watching-for-page-changes"
+	| "collect-returned-no-snapshot"
+	| "no-messages"
+	| "waiting-for-stable-reply"
+	| "waiting-for-conversation-id"
+	| "skipped-regressive-snapshot"
+	| "error";
+
+interface BaseCaptureRunResult {
+	status: CaptureRunStatus;
+	statusMessage: string;
+}
+
+export interface CaptureSavedResult extends BaseCaptureRunResult {
+	status: "saved";
+	filePath: string;
+	messageCount: number;
+	created: boolean;
+	newMessageCount: number;
+	title?: string;
+}
+
+export interface CaptureErrorResult extends BaseCaptureRunResult {
+	status: "error";
+	stage: string;
+	error: SerializedError;
+}
+
+export interface CaptureIdleResult extends BaseCaptureRunResult {
+	status: Exclude<CaptureRunStatus, "saved" | "error">;
+}
+
+export type CaptureRunResult =
+	| CaptureSavedResult
+	| CaptureErrorResult
+	| CaptureIdleResult;
+
 export interface ScriptExecutionSuccess<T> {
 	ok: true;
 	stage: string;

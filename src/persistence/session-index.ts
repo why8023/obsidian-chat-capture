@@ -12,7 +12,13 @@ export interface PreparedSessionMerge {
 	created: boolean;
 	replaceAll: boolean;
 	newMessages: NormalizedMessage[];
+	replacedKeys: string[];
 	skipReason?: string;
+}
+
+interface SessionEntryMatch {
+	key: string;
+	entry: SessionIndexEntry;
 }
 
 function toSessionMessages(messages: NormalizedMessage[]): SessionMessageIndex[] {
@@ -46,6 +52,16 @@ function countSharedPrefix(
 	return count;
 }
 
+function compareSessionMatches(left: SessionEntryMatch, right: SessionEntryMatch): number {
+	if (left.entry.lastStableMessageCount !== right.entry.lastStableMessageCount) {
+		return right.entry.lastStableMessageCount - left.entry.lastStableMessageCount;
+	}
+	if (left.entry.updatedAt !== right.entry.updatedAt) {
+		return right.entry.updatedAt - left.entry.updatedAt;
+	}
+	return right.entry.createdAt - left.entry.createdAt;
+}
+
 export class SessionIndex {
 	constructor(
 		private readonly state: PluginStateData,
@@ -60,8 +76,23 @@ export class SessionIndex {
 		return Object.values(this.state.sessions);
 	}
 
+	private findMatchesBySourceUrl(sourceUrl: string): SessionEntryMatch[] {
+		return Object.entries(this.state.sessions)
+			.filter(([, entry]) => entry.sourceUrl === sourceUrl)
+			.map(([key, entry]) => ({ key, entry }))
+			.sort(compareSessionMatches);
+	}
+
 	prepare(snapshot: NormalizedSnapshot, filePath: string): PreparedSessionMerge {
-		const existing = this.state.sessions[snapshot.conversationKey];
+		const exactMatch = this.state.sessions[snapshot.conversationKey];
+		const sourceUrlMatches = this.findMatchesBySourceUrl(snapshot.pageUrl);
+		const existingMatch = exactMatch
+			? { key: snapshot.conversationKey, entry: exactMatch }
+			: sourceUrlMatches[0];
+		const existing = existingMatch?.entry;
+		const replacedKeys = sourceUrlMatches
+			.map((match) => match.key)
+			.filter((key) => key !== snapshot.conversationKey);
 		const nextEntry: SessionIndexEntry = {
 			conversationKey: snapshot.conversationKey,
 			filePath: existing?.filePath ?? filePath,
@@ -81,6 +112,7 @@ export class SessionIndex {
 				created: true,
 				replaceAll: true,
 				newMessages: snapshot.messages,
+				replacedKeys,
 			};
 		}
 
@@ -90,21 +122,26 @@ export class SessionIndex {
 			existing.sourceUrl === nextEntry.sourceUrl
 		) {
 			return {
-				entry: existing,
+				entry: nextEntry,
 				changed: false,
 				created: false,
 				replaceAll: false,
 				newMessages: [],
+				replacedKeys,
 			};
 		}
 
 		if (snapshot.messages.length < existing.messages.length) {
 			return {
-				entry: existing,
+				entry: {
+					...existing,
+					conversationKey: snapshot.conversationKey,
+				},
 				changed: false,
 				created: false,
 				replaceAll: false,
 				newMessages: [],
+				replacedKeys,
 				skipReason: "snapshot-shorter-than-stored",
 			};
 		}
@@ -118,10 +155,16 @@ export class SessionIndex {
 			created: false,
 			replaceAll,
 			newMessages: replaceAll ? snapshot.messages : snapshot.messages.slice(sharedPrefix),
+			replacedKeys,
 		};
 	}
 
-	async commit(entry: SessionIndexEntry): Promise<void> {
+	async commit(entry: SessionIndexEntry, replacedKeys: string[] = []): Promise<void> {
+		for (const key of replacedKeys) {
+			if (key !== entry.conversationKey) {
+				delete this.state.sessions[key];
+			}
+		}
 		this.state.sessions[entry.conversationKey] = entry;
 		await this.persistState();
 	}

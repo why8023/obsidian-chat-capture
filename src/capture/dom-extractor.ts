@@ -51,6 +51,46 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
     return elements;
   }
 
+  function getNodeDepth(element) {
+    let depth = 0;
+    let current = element;
+    while (current.parentElement) {
+      depth += 1;
+      current = current.parentElement;
+    }
+    return depth;
+  }
+
+  function sortByDocumentOrder(elements) {
+    return [...elements].sort((left, right) => {
+      if (left === right) {
+        return 0;
+      }
+      const position = left.compareDocumentPosition(right);
+      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+        return -1;
+      }
+      if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+        return 1;
+      }
+      return 0;
+    });
+  }
+
+  function pruneNestedCandidates(elements) {
+    const kept = [];
+    const byDepth = [...elements].sort(
+      (left, right) => getNodeDepth(right) - getNodeDepth(left),
+    );
+    for (const candidate of byDepth) {
+      if (kept.some((existing) => candidate.contains(existing))) {
+        continue;
+      }
+      kept.push(candidate);
+    }
+    return sortByDocumentOrder(kept);
+  }
+
   function isVisible(element) {
     const rect = element.getBoundingClientRect();
     const style = window.getComputedStyle(element);
@@ -99,6 +139,17 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
       return directRole;
     }
 
+    const descendantRole = element
+      .querySelector("[data-message-author-role]")
+      ?.getAttribute("data-message-author-role");
+    if (
+      descendantRole === "user" ||
+      descendantRole === "assistant" ||
+      descendantRole === "system"
+    ) {
+      return descendantRole;
+    }
+
     const haystack = [
       element.getAttribute("aria-label"),
       element.getAttribute("data-testid"),
@@ -120,6 +171,94 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
       return "system";
     }
     return "unknown";
+  }
+
+  function parseNarrationText(text) {
+    const normalized = normalizeText(text);
+    if (!normalized) {
+      return null;
+    }
+
+    const patterns = [
+      {
+        kind: "user-echo",
+        regex: /^(?:you|user)\s*(?:said|asked)\s*[:\uFF1A]\s*/i,
+      },
+      {
+        kind: "user-echo",
+        regex: /^(?:\u4f60|\u60a8)\s*(?:\u8bf4|\u95ee)\s*[:\uFF1A]\s*/,
+      },
+      {
+        kind: "assistant-echo",
+        regex:
+          /^(?:chatgpt|assistant|gpt|model|\u52a9\u624b|\u6a21\u578b)\s*(?:said|says|\u8bf4)?\s*[:\uFF1A]\s*/i,
+      },
+    ];
+
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern.regex);
+      if (!match) {
+        continue;
+      }
+
+      return {
+        kind: pattern.kind,
+        content: normalizeText(normalized.slice(match[0].length)),
+      };
+    }
+
+    return null;
+  }
+
+  function isTransientAssistantStatus(text) {
+    const normalized = normalizeText(text).toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+
+    return [
+      /^thinking$/,
+      /^thought for \d+s$/,
+      /^reasoned for .+$/,
+      /^searching$/,
+      /^searching the web$/,
+      /^\u6b63\u5728\u601d\u8003(?:\u4e2d)?$/,
+      /^\u601d\u8003\u4e2d$/,
+      /^\u6b63\u5728\u5206\u6790$/,
+      /^\u641c\u7d22\u4e2d$/,
+    ].some((pattern) => pattern.test(normalized));
+  }
+
+  function shouldDropNarrationMessage(message, messages) {
+    const narration = parseNarrationText(message.text);
+    if (!narration) {
+      return false;
+    }
+
+    if (narration.kind === "user-echo") {
+      return true;
+    }
+
+    if (!narration.content || isTransientAssistantStatus(narration.content)) {
+      return true;
+    }
+
+    return messages.some((other) => {
+      if (other === message || other.role !== "assistant") {
+        return false;
+      }
+
+      const otherText = normalizeText(other.text);
+      if (!otherText) {
+        return false;
+      }
+
+      return (
+        narration.content === otherText ||
+        narration.content.startsWith(otherText) ||
+        otherText.startsWith(narration.content)
+      );
+    });
   }
 
   function extractCodeBlocks(element) {
@@ -206,8 +345,16 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
     });
   }
 
+  function getDocumentConversationTitle() {
+    const normalized = normalizeText(document.title.replace(/\\s+-\\s+ChatGPT$/i, ""));
+    if (!normalized || /^chatgpt$/i.test(normalized)) {
+      return "";
+    }
+    return normalized;
+  }
+
   function getConversationTitle(messages) {
-    const title = normalizeText(document.title.replace(/\\s+-\\s+ChatGPT$/i, ""));
+    const title = getDocumentConversationTitle();
     if (title) {
       return title;
     }
@@ -216,7 +363,17 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
     return normalizeText(firstUser?.text ?? "").slice(0, 80) || "Untitled conversation";
   }
 
+  function getConversationIdFromUrl() {
+    const match = location.pathname.match(/\\/c\\/([^/?#]+)/i);
+    return normalizeText(match?.[1] ?? "");
+  }
+
   function buildConversationKey(messages) {
+    const conversationId = getConversationIdFromUrl();
+    if (conversationId) {
+      return hashString("conversation-id|" + conversationId);
+    }
+
     const firstUser = normalizeText(
       messages.find((message) => message.role === "user")?.text ?? "",
     ).slice(0, 200);
@@ -246,10 +403,11 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
   function collectMessages() {
     const main = findMainContainer();
     const selectors = profiles.flatMap((profile) => profile.messageCandidates);
-    const candidates = queryAllUnique(main, selectors).filter((element) => isVisible(element));
+    const candidates = pruneNestedCandidates(
+      queryAllUnique(main, selectors).filter((element) => isVisible(element)),
+    );
 
     const messages = [];
-    let ordinal = 1;
     for (const candidate of candidates) {
       const role = detectRole(candidate);
       const text = extractText(candidate);
@@ -261,7 +419,7 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
 
       const markdownApprox = renderMarkdownApprox(candidate);
       messages.push({
-        ordinal,
+        ordinal: messages.length + 1,
         role,
         text,
         markdownApprox,
@@ -270,10 +428,14 @@ export function buildDomExtractorSource(maxHtmlSnippetLength: number): string {
         nodeFingerprint: hashString([role, text, JSON.stringify(codeBlocks)].join("|")),
         hasCompletionActions: role === "assistant" ? hasCompletionActions(candidate) : false,
       });
-      ordinal += 1;
     }
 
-    return messages;
+    return messages
+      .filter((message) => !shouldDropNarrationMessage(message, messages))
+      .map((message, index) => ({
+        ...message,
+        ordinal: index + 1,
+      }));
   }
 
   return {

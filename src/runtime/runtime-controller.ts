@@ -3,6 +3,7 @@ import {
 	createBootstrapScript,
 	HEALTHCHECK_SCRIPT,
 } from "../capture/bootstrap-script";
+import { EXTRACTOR_VERSION } from "../constants";
 import { StabilityDetector } from "../capture/stability-detector";
 import type { SnapshotNormalizer } from "../capture/snapshot-normalizer";
 import { DebugDumpWriter } from "../debug/debug-dump";
@@ -263,7 +264,9 @@ export class RuntimeController {
 
 			if (merge.changed) {
 				await this.deps.markdownWriter.writeSnapshot(normalized, merge.entry);
-				await this.deps.sessionIndex.commit(merge.entry);
+			}
+			if (merge.changed || merge.replacedKeys.length > 0) {
+				await this.deps.sessionIndex.commit(merge.entry, merge.replacedKeys);
 			}
 
 			this.failureCount = 0;
@@ -356,7 +359,9 @@ export class RuntimeController {
 					>(HEALTHCHECK_SCRIPT);
 				diagnostics = healthResult.diagnostics;
 				if (healthResult.ok) {
-					hasBootstrap = Boolean(healthResult.value?.ok);
+					hasBootstrap =
+						Boolean(healthResult.value?.ok) &&
+						healthResult.diagnostics.captureVersion === EXTRACTOR_VERSION;
 					this.logDebug("Capture healthcheck completed", {
 						leafId: binding.leafId,
 						url: binding.lastUrl,

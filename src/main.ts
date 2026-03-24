@@ -7,7 +7,7 @@ import {
 import { registerCommands } from "./commands";
 import { SnapshotNormalizer } from "./capture/snapshot-normalizer";
 import { DebugDumpWriter } from "./debug/debug-dump";
-import { Logger, ObarLogModal } from "./debug/logger";
+import { Logger } from "./debug/logger";
 import { ConversationNoteIndex } from "./persistence/conversation-note-index";
 import { MarkdownWriter } from "./persistence/markdown-writer";
 import { SessionIndex } from "./persistence/session-index";
@@ -183,16 +183,6 @@ export default class ObarPlugin extends Plugin {
 		return saved;
 	}
 
-	async reinjectCaptureScript(): Promise<boolean> {
-		const injected = await this.runtime.reinject();
-		new Notice(
-			injected
-				? "OBAR capture script reinjected."
-				: "Failed to reinject the capture script.",
-		);
-		return injected;
-	}
-
 	async pauseAutoCapture(): Promise<void> {
 		await this.runtime.pause("command");
 		new Notice("Auto capture paused.");
@@ -206,30 +196,6 @@ export default class ObarPlugin extends Plugin {
 
 		await this.runtime.resume("command");
 		new Notice("Auto capture resumed.");
-	}
-
-	openObarLog(): void {
-		new ObarLogModal(this.app, this.logger.getEntries()).open();
-	}
-
-	async migrateLegacyConversationProperties(): Promise<number> {
-		const filePaths = this.noteIndex.filePaths();
-		let migratedCount = 0;
-
-		for (const filePath of filePaths) {
-			if (await this.markdownWriter.migrateLegacyFrontmatter(filePath)) {
-				migratedCount += 1;
-			}
-		}
-
-		if (migratedCount > 0) {
-			await this.noteIndex.rebuild();
-			new Notice(`Migrated ${migratedCount} note(s) to OBAR properties.`);
-			return migratedCount;
-		}
-
-		new Notice("No legacy conversation properties were found.");
-		return 0;
 	}
 
 	async updateSettings(patch: Partial<PluginSettings>): Promise<void> {

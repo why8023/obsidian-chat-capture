@@ -78,24 +78,6 @@ const CONVERSATION_FRONTMATTER_KEY_FALLBACKS: Record<
 	],
 };
 
-const CANONICAL_CONVERSATION_FRONTMATTER_ORDER: ConversationFrontmatterField[] = [
-	"source",
-	"conversationId",
-	"conversationKey",
-	"chatUrl",
-	"createdAt",
-	"updatedAt",
-	"messageCount",
-	"extractorVersion",
-	"pageState",
-];
-
-const LEGACY_KEY_TO_FIELD = Object.fromEntries(
-	Object.entries(CONVERSATION_FRONTMATTER_KEY_FALLBACKS).flatMap(([field, keys]) =>
-		keys.map((key) => [key, field]),
-	),
-) as Record<string, ConversationFrontmatterField>;
-
 function yamlScalar(value: number | string): string {
 	if (typeof value === "number") {
 		return String(value);
@@ -181,51 +163,6 @@ function renderMessageContent(message: NormalizedMessage): string {
 	return shiftMarkdownHeadings(content, 1);
 }
 
-function normalizeLegacyValue(value: string): string {
-	if (!value) {
-		return "";
-	}
-
-	return /^\s/.test(value) ? value : ` ${value.trimStart()}`;
-}
-
-function readYamlScalarString(value: string | undefined): string | undefined {
-	if (value === undefined) {
-		return undefined;
-	}
-
-	const trimmed = value.trim();
-	if (!trimmed) {
-		return undefined;
-	}
-
-	try {
-		const parsed = JSON.parse(trimmed);
-		return typeof parsed === "string" ? parsed : String(parsed);
-	} catch {
-		// Fall back to plain text or single-quoted YAML scalars.
-	}
-
-	const singleQuoted = trimmed.match(/^'(.*)'$/);
-	if (singleQuoted) {
-		return (singleQuoted[1] ?? "").replace(/''/g, "'");
-	}
-
-	return trimmed;
-}
-
-function parseFrontmatterLine(line: string): { key: string; value: string } | null {
-	const match = line.match(/^([A-Za-z0-9_-]+):(.*)$/);
-	if (!match) {
-		return null;
-	}
-
-	return {
-		key: match[1] ?? "",
-		value: match[2] ?? "",
-	};
-}
-
 export function getConversationFrontmatterKey(
 	field: ConversationFrontmatterField,
 ): string {
@@ -237,7 +174,7 @@ export function readConversationFrontmatterEntry(
 	field: ConversationFrontmatterField,
 ): unknown {
 	for (const key of CONVERSATION_FRONTMATTER_KEY_FALLBACKS[field]) {
-		const value = parseFrontMatterEntry(frontmatter, key);
+		const value: unknown = parseFrontMatterEntry(frontmatter, key);
 		if (value !== undefined && value !== null) {
 			return value;
 		}
@@ -315,61 +252,4 @@ export function renderConversationMarkdown(
 		renderConversationBody(snapshot, settings).trimEnd(),
 		"",
 	].join("\n");
-}
-
-export function migrateConversationFrontmatter(content: string): string | null {
-	const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/);
-	if (!match) {
-		return null;
-	}
-
-	const newline = match[0].includes("\r\n") ? "\r\n" : "\n";
-	const currentBlock = (match[1] ?? "").split(/\r?\n/);
-	const trailingBreak = match[2] ?? "";
-	const passthroughLines: string[] = [];
-	const values = new Map<ConversationFrontmatterField, string>();
-	let recognized = false;
-
-	for (const line of currentBlock) {
-		const parsed = parseFrontmatterLine(line);
-		if (!parsed) {
-			passthroughLines.push(line);
-			continue;
-		}
-
-		const field = LEGACY_KEY_TO_FIELD[parsed.key];
-		if (!field) {
-			passthroughLines.push(line);
-			continue;
-		}
-
-		recognized = true;
-		if (!values.has(field) || parsed.key.startsWith("obar_")) {
-			values.set(field, normalizeLegacyValue(parsed.value));
-		}
-	}
-
-	if (!recognized) {
-		return null;
-	}
-
-	const source = readYamlScalarString(values.get("source"));
-	const conversationKey = readYamlScalarString(values.get("conversationKey"));
-	if (!conversationKey && !isSupportedConversationSource(source)) {
-		return null;
-	}
-
-	values.set("source", ` ${JSON.stringify(OBAR_CONVERSATION_SOURCE)}`);
-
-	const canonicalLines = CANONICAL_CONVERSATION_FRONTMATTER_ORDER.flatMap((field) => {
-		const value = values.get(field);
-		return value ? [`${getConversationFrontmatterKey(field)}:${value}`] : [];
-	});
-
-	const migratedBlock = ["---", ...canonicalLines, ...passthroughLines, "---"].join(
-		newline,
-	);
-	const migratedContent = `${migratedBlock}${trailingBreak}${content.slice(match[0].length)}`;
-
-	return migratedContent === content ? null : migratedContent;
 }

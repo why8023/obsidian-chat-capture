@@ -165,18 +165,6 @@ export class RuntimeController {
 		return this.captureOnce(true);
 	}
 
-	async reinject(): Promise<boolean> {
-		const binding = await this.ensureBinding();
-		if (!binding) {
-			this.deps.onStatusChange("Chat capture: no Web Viewer bound");
-			return false;
-		}
-
-		await this.ensureBootstrap(binding, true);
-		this.deps.onStatusChange("Chat capture: capture script reinjected");
-		return true;
-	}
-
 	private scheduleNextTick(delayMs: number): void {
 		if (this.stopped || this.deps.state().capturePaused || !this.deps.settings().autoCapture) {
 			return;

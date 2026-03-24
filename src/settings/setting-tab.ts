@@ -152,14 +152,14 @@ export class ObarSettingTab extends PluginSettingTab {
 				.setName(`${copy.chatTargetRule.namePrefix} ${index + 1}`)
 				.setDesc(copy.chatTargetRule.description)
 				.addText((text) => {
-					text.inputEl.style.width = "18rem";
+					text.inputEl.addClass("obar-chat-target-url-input");
 					text.setPlaceholder(copy.chatTargetRule.urlPlaceholder);
 					return text
 						.setValue(rule.urlPattern)
 						.onChange(async (value) => this.updateChatTarget(index, { urlPattern: value }));
 				})
 				.addText((text) => {
-					text.inputEl.style.width = "12rem";
+					text.inputEl.addClass("obar-chat-target-folder-input");
 					text.setPlaceholder(copy.chatTargetRule.saveFolderPlaceholder);
 					return text
 						.setValue(rule.saveFolder)

@@ -310,18 +310,13 @@ obar_page_state: "conversation"
 
 - `Open web viewer`
 - `Bind current web viewer`
-- `Reinject OBAR capture script`
-- `Save current snapshot now`
+- `Save current snapshot`
 - `Pause auto capture`
 - `Resume auto capture`
-- `Open OBAR log`
 
 其中：
 
-- `Save current snapshot now` 会强制执行一次采集并直接进入保存流程
-- `Reinject OBAR capture script` 用于 ChatGPT 页面结构变化或 Web Viewer 重建后的手动恢复
-- `Open OBAR log` 会显示内存日志缓冲区
-- `Migrate legacy properties to OBAR` 会把旧版无前缀 frontmatter 字段迁移为 `obar_*`
+- `Save current snapshot` 会强制执行一次采集并直接进入保存流程
 
 ### 11. 调试与诊断
 
@@ -329,7 +324,7 @@ obar_page_state: "conversation"
 
 - 内存日志
   - `Logger` 保存最近 500 条日志
-  - 可通过命令面板打开日志弹窗查看
+  - 最近日志会在运行时错误快照里一起写出
 - 快照文件
   - 开启 `saveRawSnapshot` 或 `debugMode` 后，写出：
     - `debug/last-raw-snapshot.json`

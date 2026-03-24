@@ -1,34 +1,4 @@
-import { App, Modal } from "obsidian";
 import type { LogEntry, LogLevel } from "../types";
-
-function safeStringify(value: unknown): string {
-	try {
-		return JSON.stringify(value, null, 2);
-	} catch (error) {
-		return JSON.stringify(
-			{
-				serializationError:
-					error instanceof Error ? error.message : String(error),
-				value: String(value),
-			},
-			null,
-			2,
-		);
-	}
-}
-
-function formatLogEntry(entry: LogEntry): string {
-	const timestamp = new Date(entry.timestamp).toISOString();
-	if (entry.context === undefined) {
-		return `[${timestamp}] ${entry.level.toUpperCase()} ${entry.message}`;
-	}
-
-	const context =
-		typeof entry.context === "string"
-			? entry.context
-			: safeStringify(entry.context);
-	return `[${timestamp}] ${entry.level.toUpperCase()} ${entry.message}\n${context}`;
-}
 
 export class Logger {
 	private readonly entries: LogEntry[] = [];
@@ -81,28 +51,5 @@ export class Logger {
 						? console.debug
 						: console.debug;
 		sink(`[OBAR] ${message}`, context ?? "");
-	}
-}
-
-export class ObarLogModal extends Modal {
-	constructor(app: App, private readonly entries: LogEntry[]) {
-		super(app);
-	}
-
-	onOpen(): void {
-		const { contentEl } = this;
-		contentEl.empty();
-		contentEl.addClass("obar-log-modal");
-		contentEl.createEl("h2", { text: "OBAR log" });
-		const pre = contentEl.createEl("pre", { cls: "obar-log-pre" });
-		pre.setText(
-			this.entries.length > 0
-				? this.entries.map((entry) => formatLogEntry(entry)).join("\n\n")
-				: "No OBAR logs yet.",
-		);
-	}
-
-	onClose(): void {
-		this.contentEl.empty();
 	}
 }

@@ -1,13 +1,9 @@
 import type { PluginSettings, PluginStateData } from "./types";
 
 export const EXTRACTOR_VERSION = "0.3.0";
-export const PLUGIN_STATE_VERSION = "1";
 export const LOG_BUFFER_LIMIT = 500;
 
-export const CHATGPT_URL_PREFIXES = [
-	"https://chatgpt.com/",
-	"https://chat.openai.com/",
-];
+export const CHATGPT_URL_PREFIXES = ["https://chatgpt.com/"];
 
 export const DEFAULT_SETTINGS: PluginSettings = {
 	chatgptUrl: "https://chatgpt.com/",
@@ -23,6 +19,5 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 };
 
 export const DEFAULT_PLUGIN_STATE: PluginStateData = {
-	version: PLUGIN_STATE_VERSION,
 	capturePaused: false,
 };

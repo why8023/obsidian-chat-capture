@@ -118,7 +118,6 @@ export interface ConversationNoteEntry {
 }
 
 export interface PluginStateData {
-	version: string;
 	capturePaused: boolean;
 }
 

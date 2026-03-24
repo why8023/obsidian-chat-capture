@@ -43,10 +43,18 @@ interface RankedBinding {
 	score: number;
 }
 
+interface WebviewListenerRegistration {
+	eventName: string;
+	listener: EventListener;
+}
+
 export class ViewerManager {
 	private readonly locator = new WebviewLocator();
-	private readonly observedWebviews = new WeakSet<ChatCaptureWebview>();
-	private readonly cleanupCallbacks = new Set<() => void>();
+	private readonly observedWebviews = new Set<ChatCaptureWebview>();
+	private readonly webviewListeners = new Map<
+		ChatCaptureWebview,
+		WebviewListenerRegistration[]
+	>();
 	private readonly recentActivityAt = new Map<string, number>();
 	private activityHandler: ((activity: WebviewActivityEvent) => void) | null = null;
 	private preferredLeafId: string | null = null;
@@ -116,10 +124,11 @@ export class ViewerManager {
 	}
 
 	dispose(): void {
-		for (const cleanup of this.cleanupCallbacks) {
-			cleanup();
+		for (const webview of [...this.webviewListeners.keys()]) {
+			this.teardownWebview(webview);
 		}
-		this.cleanupCallbacks.clear();
+		this.activityHandler = null;
+		this.preferredLeafId = null;
 		this.recentActivityAt.clear();
 	}
 
@@ -185,17 +194,19 @@ export class ViewerManager {
 		}
 
 		this.observedWebviews.add(webview);
+		const registrations: WebviewListenerRegistration[] = [];
+		this.webviewListeners.set(webview, registrations);
+
 		const addListener = <T extends Event>(
 			eventName: string,
 			handler: (event: T) => void,
 		): void => {
 			const listener = handler as EventListener;
 			webview.addEventListener(eventName, listener);
-			const cleanup = () => {
-				webview.removeEventListener(eventName, listener);
-				this.cleanupCallbacks.delete(cleanup);
-			};
-			this.cleanupCallbacks.add(cleanup);
+			registrations.push({
+				eventName,
+				listener,
+			});
 		};
 
 		const emitActivity = (
@@ -292,7 +303,30 @@ export class ViewerManager {
 				url,
 			});
 			emitActivity("destroyed", url, true);
+			this.clearLeafTracking(leafId);
+			this.teardownWebview(webview);
 		});
+	}
+
+	private teardownWebview(webview: ChatCaptureWebview): void {
+		const registrations = this.webviewListeners.get(webview);
+		if (!registrations) {
+			return;
+		}
+
+		for (const registration of registrations) {
+			webview.removeEventListener(registration.eventName, registration.listener);
+		}
+
+		this.webviewListeners.delete(webview);
+		this.observedWebviews.delete(webview);
+	}
+
+	private clearLeafTracking(leafId: string): void {
+		this.recentActivityAt.delete(leafId);
+		if (this.preferredLeafId === leafId) {
+			this.preferredLeafId = null;
+		}
 	}
 
 	private logAtLevel(level: LogLevel, message: string, context: unknown): void {

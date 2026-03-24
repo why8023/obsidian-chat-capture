@@ -64,7 +64,7 @@
 
 - 与目标 leaf 属于同一工作区区域的优先
 - 当前可见的优先
-- URL 命中 `https://chatgpt.com/` 或 `https://chat.openai.com/` 的优先
+- URL 命中 `https://chatgpt.com/` 的优先
 
 这样可以降低 Obsidian 布局切换、标签页切换或 Web Viewer 重建后的绑定丢失问题。
 
@@ -339,7 +339,7 @@ page_state: "conversation"
 
 - 仅支持桌面端 Obsidian
 - 仅支持通过 Obsidian Web Viewer 打开的 ChatGPT 页面
-- 仅匹配 `chatgpt.com` 和 `chat.openai.com`
+- 仅匹配 `chatgpt.com`
 - 页面抽取仍然依赖 DOM 结构和选择器，ChatGPT 前端大改版后可能需要更新 selector profile
 - Defuddle 解决的是“消息内容清洗”，不会替代消息边界识别、角色识别和完成态识别
 - 自动采集现在是“页面内 MutationObserver 驱动 + 宿主低频心跳”的混合模式，不再持续高频空轮询

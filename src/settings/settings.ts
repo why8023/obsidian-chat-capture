@@ -84,7 +84,6 @@ export function normalizePluginState(
 	data?: Partial<PluginStateData>,
 ): PluginStateData {
 	return {
-		version: DEFAULT_PLUGIN_STATE.version,
 		capturePaused: data?.capturePaused ?? DEFAULT_PLUGIN_STATE.capturePaused,
 	};
 }

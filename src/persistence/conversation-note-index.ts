@@ -258,13 +258,13 @@ export class ConversationNoteIndex {
 			parseFrontMatterEntry(frontmatter, "conversation_key"),
 		);
 		const chatUrl = normalizeString(parseFrontMatterEntry(frontmatter, "chat_url"));
+		if (source !== "chatgpt-webviewer" || !conversationKey) {
+			return null;
+		}
+
 		const conversationId =
 			normalizeString(parseFrontMatterEntry(frontmatter, "conversation_id")) ??
 			extractConversationIdFromUrl(chatUrl);
-
-		if (source !== "chatgpt-webviewer" && !conversationId && !conversationKey) {
-			return null;
-		}
 
 		return {
 			filePath: file.path,

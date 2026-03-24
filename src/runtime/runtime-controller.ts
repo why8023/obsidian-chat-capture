@@ -219,6 +219,9 @@ export class RuntimeController {
 				this.failureCount = 0;
 				this.stateMachine.force("idle");
 				this.awaitingStability = false;
+				nextDelay = this.deps.viewerManager.isAnyChatGPTLeafActive()
+					? Math.min(this.deps.settings().pollIntervalMs, 1_000)
+					: this.backgroundIdleDelay();
 				this.deps.onStatusChange("Chat capture: no ChatGPT Web Viewer found");
 				return false;
 			}

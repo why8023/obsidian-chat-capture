@@ -6,7 +6,7 @@ function createWrappedScript(stage: string, body: string): string {
 	return `
 (() => {
   const stage = ${JSON.stringify(stage)};
-  const getApi = () => window.__obsidianChatCapture__;
+  const getApi = () => window.__OBAR_CAPTURE__;
   const buildDiagnostics = (overrides = {}) => {
     const currentApi = getApi();
     let runtimeDiagnostics = {};
@@ -147,14 +147,14 @@ if (existing && existing.version === version) {
 
 const extractor = ${extractorFactory};
 const installedAt = new Date().toISOString();
-window.__obsidianChatCapture__ = {
+window.__OBAR_CAPTURE__ = {
   version,
   installedAt,
   health: extractor.health,
   collect: extractor.collect,
   getDiagnostics: extractor.getDiagnostics,
 };
-window.__OBSIDIAN_CAPTURE_COLLECT__ = extractor.collect;
+window.__OBAR_CAPTURE_COLLECT__ = extractor.collect;
 return {
   ok: true,
   stage,

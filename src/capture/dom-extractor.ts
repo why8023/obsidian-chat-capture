@@ -1,4 +1,4 @@
-import { EXTRACTOR_VERSION } from "../constants";
+import { EXTRACTOR_VERSION, OBAR_CAPTURE_SOURCE } from "../constants";
 import { DEFAULT_SELECTOR_PROFILES } from "./selector-profiles";
 import { buildPageProbeSource } from "./page-probe";
 import { buildTurnShellCollectorSource } from "./turn-shell-collector";
@@ -119,7 +119,7 @@ ${turnShellCollectorSource
 
   function buildSnapshot(turns) {
     return {
-      source: "chatgpt-webviewer",
+      source: ${JSON.stringify(OBAR_CAPTURE_SOURCE)},
       extractorVersion,
       pageUrl: location.href,
       pageTitle: document.title,
@@ -150,10 +150,10 @@ ${turnShellCollectorSource
   }
 
   const runtimeState =
-    window.__OBSIDIAN_CHAT_CAPTURE_STATE__ &&
-    typeof window.__OBSIDIAN_CHAT_CAPTURE_STATE__ === "object"
-      ? window.__OBSIDIAN_CHAT_CAPTURE_STATE__
-      : (window.__OBSIDIAN_CHAT_CAPTURE_STATE__ = createRuntimeState());
+    window.__OBAR_CAPTURE_STATE__ &&
+    typeof window.__OBAR_CAPTURE_STATE__ === "object"
+      ? window.__OBAR_CAPTURE_STATE__
+      : (window.__OBAR_CAPTURE_STATE__ = createRuntimeState());
 
   function clearPendingRefresh() {
     if (runtimeState.debounceTimer !== null) {

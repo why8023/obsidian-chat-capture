@@ -7,13 +7,13 @@ import {
 import { registerCommands } from "./commands";
 import { SnapshotNormalizer } from "./capture/snapshot-normalizer";
 import { DebugDumpWriter } from "./debug/debug-dump";
-import { CaptureLogModal, Logger } from "./debug/logger";
+import { Logger, ObarLogModal } from "./debug/logger";
 import { ConversationNoteIndex } from "./persistence/conversation-note-index";
 import { MarkdownWriter } from "./persistence/markdown-writer";
 import { SessionIndex } from "./persistence/session-index";
 import { RuntimeController } from "./runtime/runtime-controller";
 import { normalizePersistedData, normalizePluginSettings } from "./settings/settings";
-import { ChatCaptureSettingTab } from "./settings/setting-tab";
+import { ObarSettingTab } from "./settings/setting-tab";
 import type {
 	PersistedPluginData,
 	PluginSettings,
@@ -21,7 +21,7 @@ import type {
 } from "./types";
 import { ViewerManager } from "./webviewer/viewer-manager";
 
-export default class ObsidianChatCapturePlugin extends Plugin {
+export default class ObarPlugin extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
 	state: PluginStateData = DEFAULT_PLUGIN_STATE;
 	logger!: Logger;
@@ -74,12 +74,12 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 		});
 
 		this.statusBarEl = this.addStatusBarItem();
-		this.setStatus("Chat capture: idle");
+		this.setStatus("OBAR: idle");
 
-		this.addRibbonIcon("messages-square", "Open web viewer", () => {
+		this.addRibbonIcon("messages-square", "Open ChatGPT web viewer", () => {
 			void this.openChatGPTViewer();
 		});
-		this.addSettingTab(new ChatCaptureSettingTab(this.app, this));
+		this.addSettingTab(new ObarSettingTab(this.app, this));
 		registerCommands(this);
 
 		this.registerEvent(
@@ -141,11 +141,11 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 	async openChatGPTViewer(): Promise<void> {
 		const leaf = await this.viewerManager.openChatGPTInWebViewer(this.settings.chatgptUrl);
 		await this.viewerManager.bindLeaf(leaf);
-		this.setStatus("Chat capture: viewer opened");
+		this.setStatus("OBAR: viewer opened");
 		if (this.settings.autoCapture && !this.state.capturePaused) {
 			await this.runtime.resume("viewer-opened");
 		}
-		new Notice("Opened web viewer.");
+		new Notice("Opened the ChatGPT web viewer.");
 	}
 
 	async bindCurrentViewer(): Promise<boolean> {
@@ -155,7 +155,7 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 			return false;
 		}
 
-		this.setStatus("Chat capture: viewer bound");
+		this.setStatus("OBAR: viewer bound");
 		if (this.settings.autoCapture && !this.state.capturePaused) {
 			await this.runtime.resume("viewer-bound");
 		}
@@ -173,7 +173,7 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 		const injected = await this.runtime.reinject();
 		new Notice(
 			injected
-				? "Capture script reinjected."
+				? "OBAR capture script reinjected."
 				: "Failed to reinject the capture script.",
 		);
 		return injected;
@@ -194,8 +194,28 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 		new Notice("Auto capture resumed.");
 	}
 
-	openCaptureLog(): void {
-		new CaptureLogModal(this.app, this.logger.getEntries()).open();
+	openObarLog(): void {
+		new ObarLogModal(this.app, this.logger.getEntries()).open();
+	}
+
+	async migrateLegacyConversationProperties(): Promise<number> {
+		const filePaths = this.noteIndex.filePaths();
+		let migratedCount = 0;
+
+		for (const filePath of filePaths) {
+			if (await this.markdownWriter.migrateLegacyFrontmatter(filePath)) {
+				migratedCount += 1;
+			}
+		}
+
+		if (migratedCount > 0) {
+			await this.noteIndex.rebuild();
+			new Notice(`Migrated ${migratedCount} note(s) to OBAR properties.`);
+			return migratedCount;
+		}
+
+		new Notice("No legacy conversation properties were found.");
+		return 0;
 	}
 
 	async updateSettings(patch: Partial<PluginSettings>): Promise<void> {

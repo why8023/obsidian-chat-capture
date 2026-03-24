@@ -2,7 +2,10 @@ import { TFile, type App } from "obsidian";
 import { Logger } from "../debug/logger";
 import type { NormalizedSnapshot, PluginSettings, SessionIndexEntry } from "../types";
 import { buildConversationFilePath } from "./file-path";
-import { renderConversationMarkdown } from "./frontmatter";
+import {
+	migrateConversationFrontmatter,
+	renderConversationMarkdown,
+} from "./frontmatter";
 
 function appendSuffixToPath(path: string, suffix: string): string {
 	return path.replace(/\.md$/i, ` ${suffix}.md`);
@@ -63,6 +66,32 @@ export class MarkdownWriter {
 			messageCount: entry.lastStableMessageCount,
 		});
 		return file;
+	}
+
+	async migrateLegacyFrontmatter(filePath: string): Promise<boolean> {
+		const existing = this.app.vault.getAbstractFileByPath(filePath);
+		if (!(existing instanceof TFile)) {
+			return false;
+		}
+
+		let migrated = false;
+		await this.app.vault.process(existing, (content) => {
+			const nextContent = migrateConversationFrontmatter(content);
+			if (!nextContent) {
+				return content;
+			}
+
+			migrated = true;
+			return nextContent;
+		});
+
+		if (migrated) {
+			this.logger.info("Migrated conversation note frontmatter to OBAR", {
+				filePath,
+			});
+		}
+
+		return migrated;
 	}
 
 	private async ensureFolder(filePath: string): Promise<void> {

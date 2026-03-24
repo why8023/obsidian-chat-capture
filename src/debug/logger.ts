@@ -80,11 +80,11 @@ export class Logger {
 					: level === "info"
 						? console.debug
 						: console.debug;
-		sink(`[obsidian-chat-capture] ${message}`, context ?? "");
+		sink(`[OBAR] ${message}`, context ?? "");
 	}
 }
 
-export class CaptureLogModal extends Modal {
+export class ObarLogModal extends Modal {
 	constructor(app: App, private readonly entries: LogEntry[]) {
 		super(app);
 	}
@@ -92,13 +92,13 @@ export class CaptureLogModal extends Modal {
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass("chat-capture-log-modal");
-		contentEl.createEl("h2", { text: "Capture log" });
-		const pre = contentEl.createEl("pre", { cls: "chat-capture-log-pre" });
+		contentEl.addClass("obar-log-modal");
+		contentEl.createEl("h2", { text: "OBAR log" });
+		const pre = contentEl.createEl("pre", { cls: "obar-log-pre" });
 		pre.setText(
 			this.entries.length > 0
 				? this.entries.map((entry) => formatLogEntry(entry)).join("\n\n")
-				: "No capture logs yet.",
+				: "No OBAR logs yet.",
 		);
 	}
 

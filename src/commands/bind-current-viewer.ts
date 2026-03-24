@@ -1,7 +1,7 @@
-import type ObsidianChatCapturePlugin from "../main";
+import type ObarPlugin from "../main";
 
 export async function bindCurrentViewerCommand(
-	plugin: ObsidianChatCapturePlugin,
+	plugin: ObarPlugin,
 ): Promise<void> {
 	await plugin.bindCurrentViewer();
 }

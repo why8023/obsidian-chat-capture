@@ -41,7 +41,7 @@ const ENGLISH_COPY: SettingsTabCopy = {
 		saveFolder: {
 			name: "Save folder",
 			description: "Folder inside the vault where conversation notes are written.",
-			placeholder: "ChatGPT Chats",
+			placeholder: "OBAR Chats",
 		},
 		fileNameTemplate: {
 			name: "File name template",
@@ -101,7 +101,7 @@ const CHINESE_COPY: SettingsTabCopy = {
 		saveFolder: {
 			name: "保存目录",
 			description: "会话笔记写入到库内的这个目录。",
-			placeholder: "ChatGPT Chats",
+			placeholder: "OBAR Chats",
 		},
 		fileNameTemplate: {
 			name: "文件名模板",

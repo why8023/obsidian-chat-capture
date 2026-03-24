@@ -4,7 +4,6 @@ import {
 	TFolder,
 	type App,
 	type CachedMetadata,
-	parseFrontMatterEntry,
 } from "obsidian";
 import { Logger } from "../debug/logger";
 import type {
@@ -13,6 +12,10 @@ import type {
 	PluginSettings,
 	SessionIndexEntry,
 } from "../types";
+import {
+	isSupportedConversationSource,
+	readConversationFrontmatterEntry,
+} from "./frontmatter";
 
 function normalizeString(value: unknown): string | undefined {
 	if (typeof value !== "string") {
@@ -253,17 +256,21 @@ export class ConversationNoteIndex {
 			return null;
 		}
 
-		const source = normalizeString(parseFrontMatterEntry(frontmatter, "source"));
-		const conversationKey = normalizeString(
-			parseFrontMatterEntry(frontmatter, "conversation_key"),
+		const source = normalizeString(
+			readConversationFrontmatterEntry(frontmatter, "source"),
 		);
-		const chatUrl = normalizeString(parseFrontMatterEntry(frontmatter, "chat_url"));
-		if (source !== "chatgpt-webviewer" || !conversationKey) {
+		const conversationKey = normalizeString(
+			readConversationFrontmatterEntry(frontmatter, "conversationKey"),
+		);
+		const chatUrl = normalizeString(
+			readConversationFrontmatterEntry(frontmatter, "chatUrl"),
+		);
+		if (!isSupportedConversationSource(source) || !conversationKey) {
 			return null;
 		}
 
 		const conversationId =
-			normalizeString(parseFrontMatterEntry(frontmatter, "conversation_id")) ??
+			normalizeString(readConversationFrontmatterEntry(frontmatter, "conversationId")) ??
 			extractConversationIdFromUrl(chatUrl);
 
 		return {
@@ -272,9 +279,15 @@ export class ConversationNoteIndex {
 			conversationKey,
 			chatUrl,
 			title: file.basename,
-			createdAt: parseTimestamp(parseFrontMatterEntry(frontmatter, "created_at")),
-			updatedAt: parseTimestamp(parseFrontMatterEntry(frontmatter, "updated_at")),
-			messageCount: parseMessageCount(parseFrontMatterEntry(frontmatter, "message_count")),
+			createdAt: parseTimestamp(
+				readConversationFrontmatterEntry(frontmatter, "createdAt"),
+			),
+			updatedAt: parseTimestamp(
+				readConversationFrontmatterEntry(frontmatter, "updatedAt"),
+			),
+			messageCount: parseMessageCount(
+				readConversationFrontmatterEntry(frontmatter, "messageCount"),
+			),
 		};
 	}
 

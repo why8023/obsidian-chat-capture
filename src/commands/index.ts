@@ -1,13 +1,13 @@
 import { Notice } from "obsidian";
-import type ObsidianChatCapturePlugin from "../main";
+import type ObarPlugin from "../main";
 import { bindCurrentViewerCommand } from "./bind-current-viewer";
 import { openChatGPTCommand } from "./open-chatgpt";
 import { reinjectCommand } from "./reinject";
 import { saveNowCommand } from "./save-now";
 
-export function registerCommands(plugin: ObsidianChatCapturePlugin): void {
+export function registerCommands(plugin: ObarPlugin): void {
 	plugin.addCommand({
-		id: "open-chatgpt-in-web-viewer",
+		id: "obar-open-chatgpt-in-web-viewer",
 		name: "Open web viewer",
 		callback: () => {
 			void openChatGPTCommand(plugin);
@@ -15,7 +15,7 @@ export function registerCommands(plugin: ObsidianChatCapturePlugin): void {
 	});
 
 	plugin.addCommand({
-		id: "bind-current-chatgpt-web-viewer",
+		id: "obar-bind-current-chatgpt-web-viewer",
 		name: "Bind current web viewer",
 		callback: () => {
 			void bindCurrentViewerCommand(plugin);
@@ -23,15 +23,15 @@ export function registerCommands(plugin: ObsidianChatCapturePlugin): void {
 	});
 
 	plugin.addCommand({
-		id: "reinject-capture-script",
-		name: "Reinject capture script",
+		id: "obar-reinject-capture-script",
+		name: "Reinject OBAR capture script",
 		callback: () => {
 			void reinjectCommand(plugin);
 		},
 	});
 
 	plugin.addCommand({
-		id: "save-current-snapshot-now",
+		id: "obar-save-current-snapshot-now",
 		name: "Save current snapshot now",
 		callback: () => {
 			void saveNowCommand(plugin);
@@ -39,7 +39,7 @@ export function registerCommands(plugin: ObsidianChatCapturePlugin): void {
 	});
 
 	plugin.addCommand({
-		id: "pause-auto-capture",
+		id: "obar-pause-auto-capture",
 		name: "Pause auto capture",
 		callback: () => {
 			void plugin.pauseAutoCapture();
@@ -47,7 +47,7 @@ export function registerCommands(plugin: ObsidianChatCapturePlugin): void {
 	});
 
 	plugin.addCommand({
-		id: "resume-auto-capture",
+		id: "obar-resume-auto-capture",
 		name: "Resume auto capture",
 		callback: () => {
 			void plugin.resumeAutoCapture();
@@ -55,13 +55,21 @@ export function registerCommands(plugin: ObsidianChatCapturePlugin): void {
 	});
 
 	plugin.addCommand({
-		id: "open-capture-log",
-		name: "Open capture log",
+		id: "obar-open-log",
+		name: "Open OBAR log",
 		callback: () => {
 			if (plugin.logger.getEntries().length === 0) {
-				new Notice("There are no capture logs yet.");
+				new Notice("There are no OBAR logs yet.");
 			}
-			plugin.openCaptureLog();
+			plugin.openObarLog();
+		},
+	});
+
+	plugin.addCommand({
+		id: "obar-migrate-legacy-properties",
+		name: "Migrate legacy properties to OBAR",
+		callback: () => {
+			void plugin.migrateLegacyConversationProperties();
 		},
 	});
 }

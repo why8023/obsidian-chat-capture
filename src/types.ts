@@ -48,7 +48,7 @@ export interface RawTurnShell {
 }
 
 export interface ConversationSnapshot {
-	source: "chatgpt-webviewer";
+	source: "obar-chatgpt-webviewer";
 	extractorVersion: string;
 	pageUrl: string;
 	pageTitle: string;
@@ -74,7 +74,7 @@ export interface NormalizedMessage {
 }
 
 export interface NormalizedSnapshot {
-	source: "chatgpt-webviewer";
+	source: "obar-chatgpt-webviewer";
 	extractorVersion: string;
 	conversationId?: string;
 	conversationKey: string;
@@ -126,7 +126,7 @@ export interface PersistedPluginData {
 	state?: Partial<PluginStateData>;
 }
 
-export interface ChatCaptureWebview extends HTMLElement {
+export interface ObarWebview extends HTMLElement {
 	executeJavaScript<T = unknown>(code: string, userGesture?: boolean): Promise<T>;
 	getURL?(): string;
 	src?: string;
@@ -134,7 +134,7 @@ export interface ChatCaptureWebview extends HTMLElement {
 
 export interface WebviewBinding {
 	leafId: string;
-	webview: ChatCaptureWebview;
+	webview: ObarWebview;
 	boundAt: number;
 	lastUrl: string;
 	status: "pending" | "ready" | "lost";

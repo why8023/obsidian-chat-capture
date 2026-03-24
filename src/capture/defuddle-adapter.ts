@@ -57,7 +57,7 @@ function buildSyntheticDocument(contentHtml: string): string {
 		"<html>",
 		"<head><meta charset=\"utf-8\"></head>",
 		"<body>",
-		"<article data-obsidian-chat-capture-content=\"1\">",
+		"<article data-obar-content=\"1\">",
 		contentHtml,
 		"</article>",
 		"</body>",
@@ -143,7 +143,7 @@ export class DefuddleAdapter {
 		const html = buildSyntheticDocument(turn.contentHtml);
 		const { document } = parseHTML(html);
 		const fallbackDocumentText = normalizeText(
-			document.querySelector("[data-obsidian-chat-capture-content='1']")?.textContent ?? "",
+			document.querySelector("[data-obar-content='1']")?.textContent ?? "",
 		);
 		const text = fallbackText || fallbackDocumentText;
 
@@ -154,7 +154,7 @@ export class DefuddleAdapter {
 					separateMarkdown: true,
 					useAsync: false,
 					includeReplies: false,
-					contentSelector: "[data-obsidian-chat-capture-content='1']",
+					contentSelector: "[data-obar-content='1']",
 				}),
 			);
 			const markdown = normalizeMarkdown(result.contentMarkdown ?? result.content);

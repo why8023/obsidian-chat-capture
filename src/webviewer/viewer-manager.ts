@@ -1,7 +1,7 @@
 import { App, type WorkspaceLeaf } from "obsidian";
 import type {
-	ChatCaptureWebview,
 	LogLevel,
+	ObarWebview,
 	WebviewActivityEvent,
 	WebviewBinding,
 } from "../types";
@@ -50,9 +50,9 @@ interface WebviewListenerRegistration {
 
 export class ViewerManager {
 	private readonly locator = new WebviewLocator();
-	private readonly observedWebviews = new Set<ChatCaptureWebview>();
+	private readonly observedWebviews = new Set<ObarWebview>();
 	private readonly webviewListeners = new Map<
-		ChatCaptureWebview,
+		ObarWebview,
 		WebviewListenerRegistration[]
 	>();
 	private readonly recentActivityAt = new Map<string, number>();
@@ -308,7 +308,7 @@ export class ViewerManager {
 		});
 	}
 
-	private teardownWebview(webview: ChatCaptureWebview): void {
+	private teardownWebview(webview: ObarWebview): void {
 		const registrations = this.webviewListeners.get(webview);
 		if (!registrations) {
 			return;

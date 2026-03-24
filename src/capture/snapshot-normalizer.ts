@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { OBAR_CAPTURE_SOURCE } from "../constants";
 import { DefuddleAdapter } from "./defuddle-adapter";
 import type {
 	ChatMessageRole,
@@ -149,7 +150,7 @@ export class SnapshotNormalizer {
 		const capturedAt = Date.parse(snapshot.capturedAt);
 
 		return {
-			source: "chatgpt-webviewer",
+			source: OBAR_CAPTURE_SOURCE,
 			extractorVersion: snapshot.extractorVersion,
 			conversationId: conversationId || undefined,
 			conversationKey,

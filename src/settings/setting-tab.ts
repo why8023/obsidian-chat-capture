@@ -1,9 +1,9 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
-import type ObsidianChatCapturePlugin from "../main";
+import type ObarPlugin from "../main";
 import { getSettingsTabCopy, type SettingsTabCopy } from "./localization";
 
-export class ChatCaptureSettingTab extends PluginSettingTab {
-	constructor(app: App, private readonly plugin: ObsidianChatCapturePlugin) {
+export class ObarSettingTab extends PluginSettingTab {
+	constructor(app: App, private readonly plugin: ObarPlugin) {
 		super(app, plugin);
 	}
 

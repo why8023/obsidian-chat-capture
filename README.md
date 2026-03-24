@@ -1,4 +1,4 @@
-# Chat Capture
+# OBAR
 
 将 Obsidian 内置 **Web Viewer** 里的 ChatGPT 对话抓取为 Markdown 笔记，并持续增量更新。
 
@@ -79,14 +79,14 @@
 
 运行时会先执行健康检查脚本：
 
-- 如果页面里已经存在同版本 `window.__obsidianChatCapture__`，则直接复用
+- 如果页面里已经存在同版本 `window.__OBAR_CAPTURE__`，则直接复用
 - 如果不存在，或发生了布局变化需要强制重注入，则执行 bootstrap 脚本重新安装
 
 注入成功后，页面上会暴露：
 
-- `window.__obsidianChatCapture__.health()`
-- `window.__obsidianChatCapture__.collect()`
-- `window.__OBSIDIAN_CAPTURE_COLLECT__`
+- `window.__OBAR_CAPTURE__.health()`
+- `window.__OBAR_CAPTURE__.collect()`
+- `window.__OBAR_CAPTURE_COLLECT__`
 
 这意味着插件和页面的通信边界很清晰：插件只调用 `health` 和 `collect`，页面内部自己维护观察器、脏标记和缓存快照，宿主不再每个心跳都做一次全量 DOM 扫描。
 
@@ -244,13 +244,13 @@
 - 将 frontmatter 和正文渲染为完整 Markdown 文档
 - 更新时使用单次 `Vault.process()` / `Vault.create()` 写入，避免前后两次写入带来的索引竞态
 - frontmatter 至少包含：
-  - `conversation_id`
-  - `conversation_key`
-  - `chat_url`
+  - `obar_conversation_id`
+  - `obar_conversation_key`
+  - `obar_chat_url`
 
 文件名生成规则在 `src/persistence/file-path.ts`：
 
-- 默认目录：`ChatGPT Chats`
+- 默认目录：`OBAR Chats`
 - 默认模板：`{{date}} {{title}}`
 - 支持占位符：
   - `{{date}}`
@@ -263,14 +263,14 @@ Markdown 内容由 `src/persistence/frontmatter.ts` 生成，结构如下：
 
 ```md
 ---
-source: "chatgpt-webviewer"
-conversation_key: "..."
-chat_url: "..."
-created_at: "..."
-updated_at: "..."
-message_count: 12
-extractor_version: "0.1.0"
-page_state: "conversation"
+obar_source: "obar-chatgpt-webviewer"
+obar_conversation_key: "..."
+obar_chat_url: "..."
+obar_created_at: "..."
+obar_updated_at: "..."
+obar_message_count: 12
+obar_extractor_version: "0.1.0"
+obar_page_state: "conversation"
 ---
 
 # 会话标题
@@ -303,17 +303,18 @@ page_state: "conversation"
 
 - `Open web viewer`
 - `Bind current web viewer`
-- `Reinject capture script`
+- `Reinject OBAR capture script`
 - `Save current snapshot now`
 - `Pause auto capture`
 - `Resume auto capture`
-- `Open capture log`
+- `Open OBAR log`
 
 其中：
 
 - `Save current snapshot now` 会强制执行一次采集并直接进入保存流程
-- `Reinject capture script` 用于 ChatGPT 页面结构变化或 Web Viewer 重建后的手动恢复
-- `Open capture log` 会显示内存日志缓冲区
+- `Reinject OBAR capture script` 用于 ChatGPT 页面结构变化或 Web Viewer 重建后的手动恢复
+- `Open OBAR log` 会显示内存日志缓冲区
+- `Migrate legacy properties to OBAR` 会把旧版无前缀 frontmatter 字段迁移为 `obar_*`
 
 ### 11. 调试与诊断
 
@@ -331,7 +332,7 @@ page_state: "conversation"
 
 这些文件默认位于：
 
-- `.obsidian/plugins/obsidian-chat-capture/debug/`
+- `.obsidian/plugins/obar/debug/`
 
 ### 12. 当前实现的边界
 
@@ -418,7 +419,7 @@ npm run lint
 将以下文件复制到你的 Vault：
 
 ```text
-<Vault>/.obsidian/plugins/obsidian-chat-capture/
+<Vault>/.obsidian/plugins/obar/
 ```
 
 需要的发布产物：

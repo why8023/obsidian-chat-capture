@@ -1,6 +1,6 @@
 import type { WorkspaceLeaf } from "obsidian";
 import { CHATGPT_URL_PREFIXES } from "../constants";
-import type { ChatCaptureWebview, WebviewBinding } from "../types";
+import type { ObarWebview, WebviewBinding } from "../types";
 
 interface LeafWithPrivateId extends WorkspaceLeaf {
 	id?: string;
@@ -52,7 +52,7 @@ export function isChatGPTUrl(url: string | null | undefined): boolean {
 	return CHATGPT_URL_PREFIXES.some((prefix) => url.startsWith(prefix));
 }
 
-export function safeGetWebviewUrl(webview: ChatCaptureWebview): string | null {
+export function safeGetWebviewUrl(webview: ObarWebview): string | null {
 	try {
 		if (typeof webview.getURL === "function") {
 			const url = webview.getURL();
@@ -67,7 +67,7 @@ export function safeGetWebviewUrl(webview: ChatCaptureWebview): string | null {
 	return typeof webview.src === "string" && webview.src.length > 0 ? webview.src : null;
 }
 
-function belongsToLeaf(webview: ChatCaptureWebview, leaf: WorkspaceLeaf): boolean {
+function belongsToLeaf(webview: ObarWebview, leaf: WorkspaceLeaf): boolean {
 	const leafRoot =
 		leaf.view.containerEl.closest(".workspace-leaf") ?? leaf.view.containerEl;
 	const webviewRoot = webview.closest(".workspace-leaf") ?? webview.parentElement;
@@ -76,7 +76,7 @@ function belongsToLeaf(webview: ChatCaptureWebview, leaf: WorkspaceLeaf): boolea
 
 export class WebviewLocator {
 	locateForLeaf(leaf: WorkspaceLeaf): WebviewBinding | null {
-		const candidates = Array.from(document.querySelectorAll<ChatCaptureWebview>("webview"));
+		const candidates = Array.from(document.querySelectorAll<ObarWebview>("webview"));
 		const leafId = getLeafId(leaf);
 
 		const ranked = candidates

@@ -1,9 +1,9 @@
 {
-	"id": "obsidian-chat-capture",
-	"name": "Chat Capture",
+	"id": "obar",
+	"name": "OBAR",
 	"version": "0.1.0",
 	"minAppVersion": "1.8.3",
-	"description": "Capture ChatGPT Web Viewer conversations into Markdown notes.",
+	"description": "OBAR captures ChatGPT Web Viewer conversations into Markdown notes.",
 	"author": "wangw",
 	"isDesktopOnly": true
 }

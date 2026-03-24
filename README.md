@@ -421,6 +421,40 @@ Lint：
 npm run lint
 ```
 
+## GitHub 自动发版
+
+仓库已经补好了 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
+
+推荐发布流程：
+
+1. 本地升级版本号：
+
+```bash
+npm version patch
+```
+
+也可以用 `minor` 或 `major`。这个命令会同时完成几件事：
+
+- 更新 `package.json`
+- 通过 `version-bump.mjs` 同步 `manifest.json` 和 `versions.json`
+- 创建一个不带 `v` 前缀的 Git tag（仓库里的 `.npmrc` 已经配置好）
+
+2. 推送代码和 tag：
+
+```bash
+git push origin main --follow-tags
+```
+
+3. GitHub Actions 的 `Release` 工作流会自动执行：
+
+- 按 `mise.toml` 中声明的 Node.js 版本安装环境
+- 执行 `npm ci`、`npm run build`
+- 校验 tag、`package.json`、`manifest.json`、`versions.json` 的版本是否一致
+- 自动创建或更新同名 GitHub Release
+- 上传 `main.js`、`manifest.json`、`styles.css` 作为 release assets
+
+如果你不想本地推 tag，也可以在 GitHub 的 **Actions → Release → Run workflow** 里手动触发，默认会读取 `manifest.json` 里的版本号来发布。
+
 ## 手动安装
 
 将以下文件复制到你的 Vault：

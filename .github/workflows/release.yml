@@ -1,0 +1,98 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "*.*.*"
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: Release tag to publish. Leave empty to use manifest.json version.
+                required: false
+                type: string
+
+permissions:
+    contents: write
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Read Node version from mise.toml
+              id: node
+              shell: bash
+              run: |
+                  version="$(sed -nE 's/^[[:space:]]*node[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' mise.toml | head -n 1)"
+                  if [ -z "$version" ]; then
+                      echo "Failed to read node version from mise.toml" >&2
+                      exit 1
+                  fi
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
+
+            - name: Use Node.js ${{ steps.node.outputs.version }}
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ steps.node.outputs.version }}
+                  cache: npm
+
+            - name: Resolve release tag
+              id: tag
+              shell: bash
+              run: |
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                      tag="${{ github.event.inputs.tag }}"
+                      if [ -z "$tag" ]; then
+                          tag="$(sed -nE 's/^[[:space:]]*"version":[[:space:]]*"([^"]+)".*/\1/p' manifest.json | head -n 1)"
+                      fi
+                  else
+                      tag="${GITHUB_REF_NAME}"
+                  fi
+
+                  if [ -z "$tag" ]; then
+                      echo "Failed to resolve release tag" >&2
+                      exit 1
+                  fi
+
+                  echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+            - name: Install dependencies
+              run: npm ci
+
+            - name: Build
+              run: npm run build
+
+            - name: Verify release metadata
+              env:
+                  RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+              run: npm run release:check
+
+            - name: Collect release assets
+              shell: bash
+              run: |
+                  mkdir -p release-assets
+                  cp manifest.json main.js release-assets/
+                  if [ -f styles.css ]; then
+                      cp styles.css release-assets/
+                  fi
+
+            - name: Create or update GitHub release
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+              shell: bash
+              run: |
+                  assets=(release-assets/manifest.json release-assets/main.js)
+                  if [ -f release-assets/styles.css ]; then
+                      assets+=(release-assets/styles.css)
+                  fi
+
+                  if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+                      gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+                  else
+                      gh release create "$RELEASE_TAG" "${assets[@]}" --title "$RELEASE_TAG" --generate-notes --target "$GITHUB_SHA"
+                  fi

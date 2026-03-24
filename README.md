@@ -2,12 +2,12 @@
 
 将 Obsidian 内置 **Web Viewer** 里的 ChatGPT 对话抓取为 Markdown 笔记，并持续增量更新。
 
-当前实现不是浏览器扩展，也不是通过网络 API 拉取聊天记录，而是由插件在 Obsidian 桌面端绑定一个 ChatGPT Web Viewer，向其中注入 DOM 抽取脚本，轮询采集页面内容，再将稳定后的会话写回仓库中的 Markdown 文件。
+当前实现不是浏览器扩展，也不是通过网络 API 拉取聊天记录，而是由插件在 Obsidian 桌面端绑定一个 ChatGPT Web Viewer，向其中注入 DOM 抽取脚本，在页面内用 `MutationObserver` 维护脏状态和缓存快照，再由宿主用低频心跳拉取稳定结果，最终写回 Markdown 文件。
 
 ## 功能概览
 
 - 打开或绑定一个 ChatGPT Web Viewer 标签页
-- 自动轮询当前会话内容
+- 自动监控当前会话内容，并在变化时增量采集
 - 优先根据回复完成动作判定 Assistant 已完成，并保留文本判稳兜底，避免流式输出过程中频繁覆盖
 - 将每个会话保存为独立 Markdown 文件
 - 通过会话索引做增量更新，避免重复写入
@@ -26,7 +26,7 @@
 - `src/capture/`
   负责构造注入脚本、在页面内抽取消息、规范化快照、判断回复是否稳定。
 - `src/runtime/`
-  负责自动采集主循环，包括绑定、注入、轮询、回退重试、状态切换。
+  负责自动采集主循环，包括绑定、注入、健康检查、事件驱动调度、回退重试、状态切换。
 - `src/persistence/`
   负责文件路径生成、frontmatter 渲染、Markdown 写入、会话索引维护。
 - `src/debug/`
@@ -42,8 +42,8 @@
 2. 初始化 `Logger`、`DebugDumpWriter`、`SessionIndex`、`MarkdownWriter`、`ViewerManager`、`RuntimeController`。
 3. 注册命令、Ribbon 图标、设置页，以及 `active-leaf-change` 和 `layout-change` 监听。
 4. `layout-ready` 后尝试恢复上一次绑定的 ChatGPT Web Viewer。
-5. 如果开启了 `autoCapture` 且没有暂停，运行时控制器开始轮询采集。
-6. 每次轮询都会经历：定位 Web Viewer -> 注入或复用采集脚本 -> 收集快照 -> 归一化 -> 稳定性判定 -> 写入 Markdown -> 更新索引。
+5. 如果开启了 `autoCapture` 且没有暂停，运行时控制器开始低频心跳，并在页面变化、导航、重新激活时立即补采。
+6. 每次采集都会经历：定位 Web Viewer -> 注入或复用采集脚本 -> 先做轻量健康检查 -> 必要时收集快照 -> 归一化 -> 稳定性判定 -> 写入 Markdown -> 更新索引。
 
 这套设计的关键点是：插件并不直接依赖某个固定 DOM 节点，而是先定位 Web Viewer，再在页面上下文内执行采集脚本，因此后续适配页面结构时只需要调整 `capture/` 层。
 
@@ -90,11 +90,11 @@
 - `window.__obsidianChatCapture__.collect()`
 - `window.__OBSIDIAN_CAPTURE_COLLECT__`
 
-这意味着插件和页面的通信边界很清晰：插件只调用 `health` 和 `collect`，不直接耦合页面内部细节。
+这意味着插件和页面的通信边界很清晰：插件只调用 `health` 和 `collect`，页面内部自己维护观察器、脏标记和缓存快照，宿主不再每个心跳都做一次全量 DOM 扫描。
 
 #### 4.2 DOM 抽取策略
 
-`src/capture/dom-extractor.ts` 当前是纯 DOM 方案，核心思路是：
+`src/capture/dom-extractor.ts` 当前仍然是纯 DOM 抽取方案，但运行模式已经改成“页面内观察变化 + 按需重建快照”，核心思路是：
 
 - 通过 `selector-profiles.ts` 中的候选选择器定位主区域和消息节点
 - 对每个消息节点：
@@ -110,6 +110,10 @@
   - `chat-list`
   - `conversation`
   - `unknown`
+- 在页面内安装 `MutationObserver`
+- DOM 变化后只标记 `dirty`，并通过 debounce + `requestIdleCallback`/`setTimeout` 异步刷新缓存快照
+- `health()` 只返回轻量运行态，不主动重复扫描整页 DOM
+- `collect()` 在页面未变化时直接返回缓存快照
 
 当前默认 selector profile 是 `chatgpt-web-basic`，主要依赖：
 
@@ -144,7 +148,7 @@
 
 ### 6. 稳定性判定方案
 
-自动采集不是每次轮询都落盘，而是先走 `src/capture/stability-detector.ts`：
+自动采集不是每次心跳都落盘，而是先走 `src/capture/stability-detector.ts`：
 
 - 如果最后一条消息不是 Assistant，允许直接保存
 - 如果最后一条消息是 Assistant：
@@ -170,12 +174,13 @@
 
 1. `ensureBinding()` 找到受控 Web Viewer
 2. `ensureBootstrap()` 执行健康检查，必要时重注入
-3. 执行 `collect` 脚本，拿到原始快照
+3. 如果页面标记为 `dirty`、处于判稳阶段，或尚无缓存快照，则执行 `collect`
 4. 归一化并可选写出调试快照
 5. 调用稳定性检测器判断是否可以持久化
-6. 通过 `SessionIndex` 判断是新会话、增量更新、完全重写还是跳过
-7. 通过 `MarkdownWriter` 写入 Obsidian Vault
-8. 更新状态栏文本和内部索引
+6. 在会话 URL 还没稳定成 `/c/{id}` 前，自动模式先等待，不立即落盘
+7. 通过 `SessionIndex` 判断是新会话、增量更新、完全重写还是跳过
+8. 通过 `MarkdownWriter` 写入 Obsidian Vault
+9. 更新状态栏文本和内部索引
 
 遇到错误时：
 
@@ -186,8 +191,10 @@
 运行时还处理了一些事件驱动场景：
 
 - `layout-change` 后强制下次重注入
-- 当前受控叶子重新激活时，缩短下一次轮询延迟
-- 设置更新后立即按新参数恢复或暂停轮询
+- `dom-ready`、`did-navigate`、`did-navigate-in-page` 等 webview 生命周期事件会触发快速补采
+- 当前受控叶子重新激活时，缩短下一次心跳延迟
+- 当前受控叶子失焦后，自动切回低频后台心跳
+- 设置更新后立即按新参数恢复或暂停采集
 
 ### 8. 会话索引与增量更新
 
@@ -312,7 +319,7 @@ page_state: "conversation"
 - 仅支持通过 Obsidian Web Viewer 打开的 ChatGPT 页面
 - 仅匹配 `chatgpt.com` 和 `chat.openai.com`
 - 页面抽取依赖 DOM 结构和选择器，ChatGPT 前端大改版后可能需要更新 selector profile
-- 目前的自动采集机制是轮询，不是 MutationObserver 驱动
+- 自动采集现在是“页面内 MutationObserver 驱动 + 宿主低频心跳”的混合模式，不再持续高频空轮询
 - Markdown 写入以“整篇重建当前稳定快照”为主，不保留历史版本差异
 - 目前没有针对图片、附件、复杂富文本、分支对话树做专门建模
 
@@ -415,7 +422,7 @@ npm run lint
 
 - 扩展 selector profile，适配更多 ChatGPT 页面变体
 - 引入更细粒度的消息块模型，例如图片、表格、附件
-- 将轮询与 DOM 事件结合，减少空轮询
+- 细化宿主调度策略，例如按页面可见性和消息活跃度调整心跳
 - 为“会话切换”和“分支回复”建立更强的识别逻辑
 - 提供导出格式选项，例如更适合知识库整理的 frontmatter 字段
 

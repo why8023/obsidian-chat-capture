@@ -1,6 +1,13 @@
 export type ChatMessageRole = "user" | "assistant" | "system" | "unknown";
 export type PageState = "login" | "chat-list" | "conversation" | "unknown";
 export type LogLevel = "debug" | "info" | "warn" | "error";
+export type WebviewActivityReason =
+	| "dom-ready"
+	| "did-navigate"
+	| "did-navigate-in-page"
+	| "did-fail-load"
+	| "render-process-gone"
+	| "destroyed";
 export type RuntimeState =
 	| "idle"
 	| "openingViewer"
@@ -129,6 +136,13 @@ export interface WebviewBinding {
 	status: "pending" | "ready" | "lost";
 }
 
+export interface WebviewActivityEvent {
+	reason: WebviewActivityReason;
+	leafId: string;
+	url?: string | null;
+	isMainFrame?: boolean;
+}
+
 export interface StabilityState {
 	conversationKey: string;
 	lastAssistantUid?: string;
@@ -143,6 +157,20 @@ export interface StabilityDecision {
 	snapshot: NormalizedSnapshot;
 }
 
+export interface CaptureHealth {
+	ok: boolean;
+	url: string;
+	title: string;
+	pageState: PageState;
+	messageCount: number | null;
+	dirty: boolean;
+	pendingUpdate: boolean;
+	observed: boolean;
+	visibilityState: string | null;
+	lastMutationAt: number | null;
+	lastSnapshotAt: number | null;
+}
+
 export interface CaptureDiagnostics {
 	pageUrl: string | null;
 	pageTitle: string;
@@ -151,6 +179,12 @@ export interface CaptureDiagnostics {
 	hasCaptureApi: boolean;
 	captureVersion: string | null;
 	messageCount?: number | null;
+	dirty?: boolean;
+	pendingUpdate?: boolean;
+	observed?: boolean;
+	visibilityState?: string | null;
+	lastMutationAt?: number | null;
+	lastSnapshotAt?: number | null;
 }
 
 export interface SerializedError {

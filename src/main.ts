@@ -65,6 +65,9 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 			logger: this.logger,
 			onStatusChange: (status) => this.setStatus(status),
 		});
+		this.viewerManager.setActivityHandler((activity) => {
+			this.runtime.handleWebviewActivity(activity);
+		});
 
 		this.statusBarEl = this.addStatusBarItem();
 		this.setStatus("Chat capture: idle");

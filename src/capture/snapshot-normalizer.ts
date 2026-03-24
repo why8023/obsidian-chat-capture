@@ -48,9 +48,12 @@ function normalizeCodeBlocks(blocks?: CodeBlock[]): CodeBlock[] {
 	return (blocks ?? [])
 		.map((block) => ({
 			language: normalizeText(block.language),
-			code: normalizeText(block.code),
+			code: String(block.code ?? "")
+				.replace(/\r\n/g, "\n")
+				.replace(/[\u200B-\u200D\uFEFF]/g, "")
+				.replace(/\u00A0/g, " "),
 		}))
-		.filter((block) => block.code.length > 0);
+		.filter((block) => block.code.trim().length > 0);
 }
 
 export class SnapshotNormalizer {

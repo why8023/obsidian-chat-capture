@@ -2,6 +2,7 @@ import {
 	COLLECT_SNAPSHOT_SCRIPT,
 	createBootstrapScript,
 	HEALTHCHECK_SCRIPT,
+	type HealthcheckResult,
 } from "../capture/bootstrap-script";
 import { EXTRACTOR_VERSION } from "../constants";
 import { StabilityDetector } from "../capture/stability-detector";
@@ -17,6 +18,7 @@ import type {
 	PluginStateData,
 	ScriptExecutionResult,
 	SerializedError,
+	WebviewActivityEvent,
 	WebviewBinding,
 } from "../types";
 import { ViewerManager } from "../webviewer/viewer-manager";
@@ -49,6 +51,11 @@ interface RuntimeControllerDeps {
 	onStatusChange: (status: string) => void;
 }
 
+interface BootstrapState {
+	diagnostics?: CaptureDiagnostics;
+	health: HealthcheckResult;
+}
+
 export class RuntimeController {
 	private readonly stateMachine = new RuntimeStateMachine();
 	private readonly stabilityDetector = new StabilityDetector();
@@ -57,6 +64,7 @@ export class RuntimeController {
 	private isTicking = false;
 	private forceReinject = false;
 	private stopped = false;
+	private awaitingStability = false;
 
 	constructor(private readonly deps: RuntimeControllerDeps) {}
 
@@ -73,13 +81,20 @@ export class RuntimeController {
 	async handleLayoutChange(): Promise<void> {
 		this.forceReinject = true;
 		if (this.deps.settings().autoCapture && !this.deps.state().capturePaused) {
-			this.scheduleNextTick(500);
+			this.scheduleNextTick(
+				this.deps.viewerManager.isControlledLeafActive() ? 500 : this.backgroundIdleDelay(),
+			);
 		}
 	}
 
 	async handleActiveLeafChange(): Promise<void> {
 		if (this.deps.viewerManager.isControlledLeafActive()) {
 			this.scheduleNextTick(250);
+			return;
+		}
+
+		if (this.deps.settings().autoCapture && !this.deps.state().capturePaused) {
+			this.scheduleNextTick(this.backgroundIdleDelay());
 		}
 	}
 
@@ -99,6 +114,7 @@ export class RuntimeController {
 		await this.deps.persistState();
 		this.clearTimer();
 		this.stateMachine.force("idle");
+		this.awaitingStability = false;
 		this.deps.logger.info("Auto capture paused", { reason });
 		this.deps.onStatusChange("Chat capture: paused");
 	}
@@ -115,6 +131,31 @@ export class RuntimeController {
 		this.stopped = true;
 		this.clearTimer();
 		this.stateMachine.force("idle");
+		this.awaitingStability = false;
+	}
+
+	handleWebviewActivity(activity: WebviewActivityEvent): void {
+		if (!this.deps.settings().autoCapture || this.deps.state().capturePaused) {
+			return;
+		}
+
+		if (
+			activity.reason === "dom-ready" ||
+			activity.reason === "did-navigate" ||
+			activity.reason === "did-navigate-in-page" ||
+			activity.reason === "render-process-gone" ||
+			activity.reason === "destroyed"
+		) {
+			this.forceReinject = true;
+		}
+
+		const delay =
+			activity.reason === "dom-ready" ||
+			activity.reason === "did-navigate" ||
+			activity.reason === "did-navigate-in-page"
+				? 150
+				: 500;
+		this.scheduleNextTick(delay);
 	}
 
 	async saveSnapshotNow(): Promise<boolean> {
@@ -167,15 +208,19 @@ export class RuntimeController {
 		let captureStage = "binding";
 		let binding: WebviewBinding | null = null;
 		let diagnostics: CaptureDiagnostics | undefined;
+		let activeLeaf = this.deps.viewerManager.isControlledLeafActive();
 
 		try {
 			binding = await this.ensureBinding();
 			if (!binding) {
 				this.failureCount = 0;
 				this.stateMachine.force("idle");
+				this.awaitingStability = false;
 				this.deps.onStatusChange("Chat capture: no ChatGPT Web Viewer found");
 				return false;
 			}
+
+			activeLeaf = this.deps.viewerManager.isControlledLeafActive();
 
 			this.logDebug("Capture tick bound webview", {
 				forcePersist,
@@ -184,7 +229,23 @@ export class RuntimeController {
 			});
 
 			captureStage = "bootstrap";
-			diagnostics = await this.ensureBootstrap(binding, this.forceReinject);
+			const bootstrapState = await this.ensureBootstrap(binding, this.forceReinject);
+			diagnostics = bootstrapState.diagnostics;
+			let health = bootstrapState.health;
+			nextDelay = this.nextIntervalFor(health, activeLeaf, this.awaitingStability);
+			this.logDebug("Capture healthcheck completed", {
+				leafId: binding.leafId,
+				url: binding.lastUrl,
+				health,
+				diagnostics,
+			});
+
+			if (!forcePersist && !this.shouldCollectSnapshot(health)) {
+				this.failureCount = 0;
+				this.stateMachine.force("polling");
+				this.deps.onStatusChange("Chat capture: watching for page changes");
+				return false;
+			}
 
 			this.stateMachine.force("polling");
 			captureStage = "collect";
@@ -194,6 +255,19 @@ export class RuntimeController {
 				>(COLLECT_SNAPSHOT_SCRIPT);
 			const rawSnapshot = this.unwrapScriptResult(collectResult);
 			diagnostics = collectResult.diagnostics;
+			health = {
+				ok: true,
+				url: diagnostics.pageUrl ?? binding.lastUrl,
+				title: diagnostics.pageTitle,
+				pageState: diagnostics.pageState ?? health.pageState,
+				messageCount: diagnostics.messageCount ?? null,
+				dirty: diagnostics.dirty ?? false,
+				pendingUpdate: diagnostics.pendingUpdate ?? false,
+				observed: diagnostics.observed ?? health.observed,
+				visibilityState: diagnostics.visibilityState ?? health.visibilityState,
+				lastMutationAt: diagnostics.lastMutationAt ?? health.lastMutationAt,
+				lastSnapshotAt: diagnostics.lastSnapshotAt ?? Date.now(),
+			};
 			this.logDebug("Capture collect completed", {
 				leafId: binding.leafId,
 				diagnostics,
@@ -207,6 +281,8 @@ export class RuntimeController {
 					url: binding.lastUrl,
 					diagnostics,
 				});
+				this.awaitingStability = false;
+				nextDelay = this.nextIntervalFor(health, activeLeaf, this.awaitingStability);
 				this.deps.onStatusChange("Chat capture: collect returned no snapshot");
 				return false;
 			}
@@ -223,7 +299,17 @@ export class RuntimeController {
 					pageState: normalized.pageState,
 					diagnostics,
 				});
-				nextDelay = this.nextIntervalFor(normalized.pageState, false);
+				this.awaitingStability = false;
+				nextDelay = this.nextIntervalFor(
+					{
+						...health,
+						pageState: normalized.pageState,
+						messageCount: 0,
+						lastSnapshotAt: normalized.capturedAt,
+					},
+					activeLeaf,
+					this.awaitingStability,
+				);
 				this.deps.onStatusChange("Chat capture: no messages detected");
 				return false;
 			}
@@ -231,7 +317,17 @@ export class RuntimeController {
 			const stability = this.stabilityDetector.accept(normalized, this.deps.settings(), {
 				force: forcePersist,
 			});
-			nextDelay = this.nextIntervalFor(normalized.pageState, !stability.readyToPersist);
+			this.awaitingStability = !stability.readyToPersist;
+			nextDelay = this.nextIntervalFor(
+				{
+					...health,
+					pageState: normalized.pageState,
+					messageCount: normalized.messages.length,
+					lastSnapshotAt: normalized.capturedAt,
+				},
+				activeLeaf,
+				this.awaitingStability,
+			);
 
 			if (!stability.readyToPersist) {
 				this.logDebug("Capture waiting for stability", {
@@ -240,6 +336,16 @@ export class RuntimeController {
 					messageCount: normalized.messages.length,
 				});
 				this.deps.onStatusChange("Chat capture: waiting for stable reply");
+				return false;
+			}
+
+			if (
+				!forcePersist &&
+				!this.hasStableConversationUrl(normalized.pageUrl) &&
+				!this.deps.sessionIndex.get(normalized.conversationKey)
+			) {
+				nextDelay = Math.min(this.deps.settings().pollIntervalMs, 1_000);
+				this.deps.onStatusChange("Chat capture: waiting for conversation URL");
 				return false;
 			}
 
@@ -258,6 +364,7 @@ export class RuntimeController {
 					conversationKey: normalized.conversationKey,
 					reason: merge.skipReason,
 				});
+				this.awaitingStability = false;
 				this.deps.onStatusChange("Chat capture: skipped regressive snapshot");
 				return false;
 			}
@@ -270,6 +377,7 @@ export class RuntimeController {
 			}
 
 			this.failureCount = 0;
+			this.awaitingStability = false;
 			this.deps.onStatusChange(
 				merge.changed
 					? `Chat capture: saved ${merge.entry.lastStableMessageCount} messages`
@@ -339,35 +447,25 @@ export class RuntimeController {
 	private async ensureBootstrap(
 		binding: WebviewBinding,
 		forceReinject: boolean,
-	): Promise<CaptureDiagnostics | undefined> {
+	): Promise<BootstrapState> {
 		this.stateMachine.force("injecting");
 		await this.waitForDomReady(binding);
 
 		let hasBootstrap = false;
 		let diagnostics: CaptureDiagnostics | undefined;
+		let health: HealthcheckResult | null = null;
 		if (!forceReinject) {
 			try {
 				const healthResult =
-					await binding.webview.executeJavaScript<
-						ScriptExecutionResult<{
-							ok?: boolean;
-							messageCount?: number;
-							pageState?: string;
-							title?: string;
-							url?: string;
-						}>
-					>(HEALTHCHECK_SCRIPT);
+					await binding.webview.executeJavaScript<ScriptExecutionResult<HealthcheckResult>>(
+						HEALTHCHECK_SCRIPT,
+					);
 				diagnostics = healthResult.diagnostics;
 				if (healthResult.ok) {
+					health = healthResult.value;
 					hasBootstrap =
-						Boolean(healthResult.value?.ok) &&
+						Boolean(health.ok) &&
 						healthResult.diagnostics.captureVersion === EXTRACTOR_VERSION;
-					this.logDebug("Capture healthcheck completed", {
-						leafId: binding.leafId,
-						url: binding.lastUrl,
-						result: healthResult.value,
-						diagnostics: healthResult.diagnostics,
-					});
 				} else {
 					this.logDebug("Capture healthcheck requested reinjection", {
 						leafId: binding.leafId,
@@ -404,16 +502,28 @@ export class RuntimeController {
 				reusedExisting: bootstrapInfo.reusedExisting,
 				diagnostics: bootstrapResult.diagnostics,
 			});
-		} else {
-			this.logDebug("Capture bootstrap already available", {
-				leafId: binding.leafId,
-				url: binding.lastUrl,
-				diagnostics,
-			});
+			const postBootstrapHealth =
+				await binding.webview.executeJavaScript<ScriptExecutionResult<HealthcheckResult>>(
+					HEALTHCHECK_SCRIPT,
+				);
+			health = this.unwrapScriptResult(postBootstrapHealth);
+			diagnostics = postBootstrapHealth.diagnostics;
 		}
 
 		this.forceReinject = false;
-		return diagnostics;
+		if (!health) {
+			const healthResult =
+				await binding.webview.executeJavaScript<ScriptExecutionResult<HealthcheckResult>>(
+					HEALTHCHECK_SCRIPT,
+				);
+			health = this.unwrapScriptResult(healthResult);
+			diagnostics = healthResult.diagnostics;
+		}
+
+		return {
+			diagnostics,
+			health,
+		};
 	}
 
 	private async waitForDomReady(binding: WebviewBinding): Promise<void> {
@@ -461,16 +571,65 @@ export class RuntimeController {
 		});
 	}
 
-	private nextIntervalFor(pageState: string, waitingForStability: boolean): number {
-		if (pageState === "login" || pageState === "unknown") {
-			return Math.max(this.deps.settings().pollIntervalMs * 2, 3_000);
+	private shouldCollectSnapshot(health: HealthcheckResult): boolean {
+		if (health.dirty || health.pendingUpdate) {
+			return true;
+		}
+
+		if (this.awaitingStability) {
+			return true;
+		}
+
+		if (health.lastSnapshotAt === null) {
+			return true;
+		}
+
+		return false;
+	}
+
+	private backgroundIdleDelay(): number {
+		return Math.max(this.deps.settings().pollIntervalMs * 10, 15_000);
+	}
+
+	private hasStableConversationUrl(pageUrl: string): boolean {
+		return /\/c\/[^/?#]+/i.test(pageUrl);
+	}
+
+	private nextIntervalFor(
+		health: HealthcheckResult,
+		activeLeaf: boolean,
+		waitingForStability: boolean,
+	): number {
+		const baseInterval = this.deps.settings().pollIntervalMs;
+		const hidden = health.visibilityState === "hidden";
+
+		if (health.pageState === "login" || health.pageState === "unknown") {
+			return activeLeaf && !hidden
+				? Math.max(baseInterval * 6, 10_000)
+				: Math.max(baseInterval * 12, 20_000);
+		}
+
+		if (health.pageState === "chat-list") {
+			return activeLeaf && !hidden
+				? Math.max(baseInterval * 4, 8_000)
+				: this.backgroundIdleDelay();
 		}
 
 		if (waitingForStability) {
-			return Math.min(this.deps.settings().pollIntervalMs, 1_000);
+			return Math.min(baseInterval, 1_000);
 		}
 
-		return this.deps.settings().pollIntervalMs;
+		if (health.dirty || health.pendingUpdate) {
+			return activeLeaf && !hidden
+				? Math.min(baseInterval, 1_000)
+				: Math.max(baseInterval * 2, 2_500);
+		}
+
+		if (!activeLeaf || hidden) {
+			return this.backgroundIdleDelay();
+		}
+
+		return Math.max(baseInterval * 3, 5_000);
 	}
 
 	private unwrapScriptResult<T>(result: ScriptExecutionResult<T>): T {

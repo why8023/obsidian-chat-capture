@@ -78,7 +78,7 @@ export class Logger {
 				: level === "warn"
 					? console.warn
 					: level === "info"
-						? console.info
+						? console.debug
 						: console.debug;
 		sink(`[obsidian-chat-capture] ${message}`, context ?? "");
 	}

@@ -5,6 +5,7 @@ import type {
 	ControlledViewerRef,
 	LogLevel,
 	PluginStateData,
+	WebviewActivityEvent,
 	WebviewBinding,
 } from "../types";
 import { Logger } from "../debug/logger";
@@ -46,6 +47,7 @@ export class ViewerManager {
 	private readonly locator = new WebviewLocator();
 	private readonly observedWebviews = new WeakSet<ChatCaptureWebview>();
 	private readonly cleanupCallbacks = new Set<() => void>();
+	private activityHandler: ((activity: WebviewActivityEvent) => void) | null = null;
 
 	constructor(
 		private readonly app: App,
@@ -141,6 +143,10 @@ export class ViewerManager {
 		return this.bindLeaf(leaf);
 	}
 
+	setActivityHandler(handler: ((activity: WebviewActivityEvent) => void) | null): void {
+		this.activityHandler = handler;
+	}
+
 	locateBoundWebview(): WebviewBinding | null {
 		const leaf = this.getControlledLeaf() ?? this.findAnyChatGPTLeaf();
 		if (!leaf) {
@@ -209,39 +215,73 @@ export class ViewerManager {
 		};
 
 		addListener<Event>("dom-ready", () => {
+			const url = safeGetWebviewUrl(webview) ?? binding.lastUrl;
 			this.logger.info("Webview DOM ready", {
 				leafId,
-				url: safeGetWebviewUrl(webview) ?? binding.lastUrl,
+				url,
+			});
+			this.activityHandler?.({
+				reason: "dom-ready",
+				leafId,
+				url,
+				isMainFrame: true,
 			});
 		});
 
 		addListener<WebviewNavigationEvent>("did-navigate", (event) => {
+			const url = event.url ?? safeGetWebviewUrl(webview) ?? binding.lastUrl;
 			this.logger.info("Webview navigated", {
 				leafId,
-				url: event.url ?? safeGetWebviewUrl(webview) ?? binding.lastUrl,
+				url,
 				isMainFrame: event.isMainFrame ?? true,
 			});
+			if (event.isMainFrame ?? true) {
+				this.activityHandler?.({
+					reason: "did-navigate",
+					leafId,
+					url,
+					isMainFrame: event.isMainFrame ?? true,
+				});
+			}
 		});
 
 		addListener<WebviewNavigationEvent>("did-navigate-in-page", (event) => {
+			const url = event.url ?? safeGetWebviewUrl(webview) ?? binding.lastUrl;
 			this.logger.info("Webview navigated in page", {
 				leafId,
-				url: event.url ?? safeGetWebviewUrl(webview) ?? binding.lastUrl,
+				url,
 				isMainFrame: event.isMainFrame ?? true,
 			});
+			if (event.isMainFrame ?? true) {
+				this.activityHandler?.({
+					reason: "did-navigate-in-page",
+					leafId,
+					url,
+					isMainFrame: event.isMainFrame ?? true,
+				});
+			}
 		});
 
 		addListener<WebviewDidFailLoadEvent>("did-fail-load", (event) => {
+			const url =
+				event.validatedURL ??
+				safeGetWebviewUrl(webview) ??
+				binding.lastUrl;
 			this.logger.warn("Webview failed to load", {
 				leafId,
-				url:
-					event.validatedURL ??
-					safeGetWebviewUrl(webview) ??
-					binding.lastUrl,
+				url,
 				isMainFrame: event.isMainFrame ?? true,
 				errorCode: event.errorCode,
 				errorDescription: event.errorDescription,
 			});
+			if (event.isMainFrame ?? true) {
+				this.activityHandler?.({
+					reason: "did-fail-load",
+					leafId,
+					url,
+					isMainFrame: event.isMainFrame ?? true,
+				});
+			}
 		});
 
 		addListener<WebviewConsoleMessageEvent>("console-message", (event) => {
@@ -257,18 +297,32 @@ export class ViewerManager {
 		});
 
 		addListener<WebviewRenderProcessGoneEvent>("render-process-gone", (event) => {
+			const url = safeGetWebviewUrl(webview) ?? binding.lastUrl;
 			this.logger.error("Webview render process gone", {
 				leafId,
-				url: safeGetWebviewUrl(webview) ?? binding.lastUrl,
+				url,
 				reason: event.reason,
 				exitCode: event.exitCode,
+			});
+			this.activityHandler?.({
+				reason: "render-process-gone",
+				leafId,
+				url,
+				isMainFrame: true,
 			});
 		});
 
 		addListener<Event>("destroyed", () => {
+			const url = safeGetWebviewUrl(webview) ?? binding.lastUrl;
 			this.logger.warn("Webview destroyed", {
 				leafId,
-				url: safeGetWebviewUrl(webview) ?? binding.lastUrl,
+				url,
+			});
+			this.activityHandler?.({
+				reason: "destroyed",
+				leafId,
+				url,
+				isMainFrame: true,
 			});
 		});
 	}

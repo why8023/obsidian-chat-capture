@@ -39,9 +39,7 @@ export class DebugDumpWriter {
 	}
 
 	private async ensureDebugDir(): Promise<string> {
-		const pluginDir = normalizePath(
-			`${this.app.vault.configDir}/plugins/${this.manifest.id}`,
-		);
+		const pluginDir = this.resolvePluginDir();
 		const debugDir = normalizePath(`${pluginDir}/debug`);
 		const adapter = this.app.vault.adapter;
 
@@ -53,5 +51,13 @@ export class DebugDumpWriter {
 		}
 
 		return debugDir;
+	}
+
+	private resolvePluginDir(): string {
+		if (this.manifest.dir) {
+			return normalizePath(this.manifest.dir);
+		}
+
+		return normalizePath(`${this.app.vault.configDir}/plugins/${this.manifest.id}`);
 	}
 }

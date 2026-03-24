@@ -1,10 +1,7 @@
 import { App, type WorkspaceLeaf } from "obsidian";
-import { CHATGPT_URL_PREFIXES } from "../constants";
 import type {
 	ChatCaptureWebview,
-	ControlledViewerRef,
 	LogLevel,
-	PluginStateData,
 	WebviewActivityEvent,
 	WebviewBinding,
 } from "../types";
@@ -16,8 +13,6 @@ import {
 	safeGetWebviewUrl,
 	WebviewLocator,
 } from "./webview-locator";
-
-type PersistState = () => Promise<void>;
 
 interface WebviewConsoleMessageEvent extends Event {
 	level?: number;
@@ -43,17 +38,22 @@ interface WebviewRenderProcessGoneEvent extends Event {
 	reason?: string;
 }
 
+interface RankedBinding {
+	binding: WebviewBinding;
+	score: number;
+}
+
 export class ViewerManager {
 	private readonly locator = new WebviewLocator();
 	private readonly observedWebviews = new WeakSet<ChatCaptureWebview>();
 	private readonly cleanupCallbacks = new Set<() => void>();
+	private readonly recentActivityAt = new Map<string, number>();
 	private activityHandler: ((activity: WebviewActivityEvent) => void) | null = null;
+	private preferredLeafId: string | null = null;
 
 	constructor(
 		private readonly app: App,
 		private readonly logger: Logger,
-		private readonly getState: () => PluginStateData,
-		private readonly persistState: PersistState,
 	) {}
 
 	async openChatGPTInWebViewer(url: string): Promise<WorkspaceLeaf> {
@@ -71,7 +71,7 @@ export class ViewerManager {
 		return leaf;
 	}
 
-	async bindActiveChatGPTViewer(): Promise<ControlledViewerRef | null> {
+	async bindActiveChatGPTViewer(): Promise<string | null> {
 		const activeLeaf = this.app.workspace.getMostRecentLeaf();
 		if (!activeLeaf) {
 			return null;
@@ -80,98 +80,39 @@ export class ViewerManager {
 		return this.bindLeaf(activeLeaf);
 	}
 
-	async bindLeaf(leaf: WorkspaceLeaf): Promise<ControlledViewerRef | null> {
+	async bindLeaf(leaf: WorkspaceLeaf): Promise<string | null> {
 		const url = getLeafWebViewerUrl(leaf);
 		if (!isChatGPTUrl(url)) {
 			return null;
 		}
 
-		const ref: ControlledViewerRef = {
-			leafId: getLeafId(leaf),
-			expectedUrlPrefix:
-				CHATGPT_URL_PREFIXES.find((prefix) => url?.startsWith(prefix)) ??
-				CHATGPT_URL_PREFIXES[0] ??
-				"https://chatgpt.com/",
-			createdAt: this.getState().controlledViewer?.createdAt ?? Date.now(),
-			lastSeenAt: Date.now(),
-		};
-
-		this.getState().controlledViewer = ref;
-		await this.persistState();
-		this.logger.info("Bound ChatGPT Web Viewer", {
-			leafId: ref.leafId,
+		const leafId = getLeafId(leaf);
+		this.preferredLeafId = leafId;
+		this.recentActivityAt.set(leafId, Date.now());
+		this.logger.info("Prioritized ChatGPT Web Viewer", {
+			leafId,
 			url,
 		});
-		return ref;
-	}
-
-	getControlledLeaf(): WorkspaceLeaf | null {
-		const ref = this.getState().controlledViewer;
-		const webviewerLeaves = this.app.workspace.getLeavesOfType("webviewer");
-
-		if (!ref) {
-			return null;
-		}
-
-		for (const leaf of webviewerLeaves) {
-			const url = getLeafWebViewerUrl(leaf);
-			if (!isChatGPTUrl(url)) {
-				continue;
-			}
-
-			if (getLeafId(leaf) === ref.leafId) {
-				return leaf;
-			}
-		}
-
-		for (const leaf of webviewerLeaves) {
-			const url = getLeafWebViewerUrl(leaf);
-			if (url?.startsWith(ref.expectedUrlPrefix)) {
-				return leaf;
-			}
-		}
-
-		return null;
-	}
-
-	async restoreControlledViewer(): Promise<ControlledViewerRef | null> {
-		const leaf = this.getControlledLeaf() ?? this.findAnyChatGPTLeaf();
-		if (!leaf) {
-			return null;
-		}
-
-		return this.bindLeaf(leaf);
+		return leafId;
 	}
 
 	setActivityHandler(handler: ((activity: WebviewActivityEvent) => void) | null): void {
 		this.activityHandler = handler;
 	}
 
-	locateBoundWebview(): WebviewBinding | null {
-		const leaf = this.getControlledLeaf() ?? this.findAnyChatGPTLeaf();
-		if (!leaf) {
-			return null;
-		}
-
-		const binding = this.locator.locateForLeaf(leaf);
-		if (!binding) {
-			return null;
-		}
-
-		const ref = this.getState().controlledViewer;
-		if (ref) {
-			ref.lastSeenAt = Date.now();
-		}
-		this.observeWebview(binding);
-		return binding;
+	locateBestWebview(): WebviewBinding | null {
+		const ranked = this.collectRankedBindings();
+		return ranked[0]?.binding ?? null;
 	}
 
-	isControlledLeafActive(): boolean {
-		const controlledLeaf = this.getControlledLeaf();
-		return (
-			controlledLeaf !== null &&
-			controlledLeaf === this.app.workspace.getMostRecentLeaf()
-		);
+	isAnyChatGPTLeafActive(): boolean {
+		const activeLeaf = this.app.workspace.getMostRecentLeaf();
+		return activeLeaf ? isChatGPTUrl(getLeafWebViewerUrl(activeLeaf)) : false;
+	}
+
+	isLeafActive(leafId: string): boolean {
+		const activeLeaf = this.app.workspace.getMostRecentLeaf();
+		return activeLeaf ? getLeafId(activeLeaf) === leafId : false;
 	}
 
 	dispose(): void {
@@ -179,19 +120,62 @@ export class ViewerManager {
 			cleanup();
 		}
 		this.cleanupCallbacks.clear();
+		this.recentActivityAt.clear();
 	}
 
-	private findAnyChatGPTLeaf(): WorkspaceLeaf | null {
+	private collectRankedBindings(): RankedBinding[] {
 		const activeLeaf = this.app.workspace.getMostRecentLeaf();
+		const activeLeafId = activeLeaf ? getLeafId(activeLeaf) : null;
+		const now = Date.now();
+
+		return this.getChatGPTLeaves()
+			.map((leaf) => {
+				const binding = this.locator.locateForLeaf(leaf);
+				if (!binding) {
+					return null;
+				}
+
+				this.observeWebview(binding);
+				const recentActivityAt = this.recentActivityAt.get(binding.leafId) ?? 0;
+				const recentlyActive = recentActivityAt > 0 && now - recentActivityAt < 15_000;
+				const stableConversationUrl = /\/c\/[^/?#]+/i.test(binding.lastUrl);
+				const score =
+					(binding.leafId === activeLeafId ? 12 : 0) +
+					(binding.leafId === this.preferredLeafId ? 8 : 0) +
+					(recentlyActive ? 6 : 0) +
+					(stableConversationUrl ? 2 : 0);
+				return {
+					binding,
+					score,
+				};
+			})
+			.filter((candidate): candidate is RankedBinding => candidate !== null)
+			.sort((left, right) => right.score - left.score);
+	}
+
+	private getChatGPTLeaves(): WorkspaceLeaf[] {
+		const leaves = this.app.workspace.getLeavesOfType("webviewer");
+		const activeLeaf = this.app.workspace.getMostRecentLeaf();
+		const ordered: WorkspaceLeaf[] = [];
+		const seen = new Set<string>();
+
 		if (activeLeaf && isChatGPTUrl(getLeafWebViewerUrl(activeLeaf))) {
-			return activeLeaf;
+			const activeLeafId = getLeafId(activeLeaf);
+			ordered.push(activeLeaf);
+			seen.add(activeLeafId);
 		}
 
-		return (
-			this.app.workspace
-				.getLeavesOfType("webviewer")
-				.find((leaf) => isChatGPTUrl(getLeafWebViewerUrl(leaf))) ?? null
-		);
+		for (const leaf of leaves) {
+			const leafId = getLeafId(leaf);
+			if (seen.has(leafId) || !isChatGPTUrl(getLeafWebViewerUrl(leaf))) {
+				continue;
+			}
+
+			ordered.push(leaf);
+			seen.add(leafId);
+		}
+
+		return ordered;
 	}
 
 	private observeWebview(binding: WebviewBinding): void {
@@ -214,18 +198,27 @@ export class ViewerManager {
 			this.cleanupCallbacks.add(cleanup);
 		};
 
+		const emitActivity = (
+			reason: WebviewActivityEvent["reason"],
+			url: string | null | undefined,
+			isMainFrame: boolean,
+		): void => {
+			this.recentActivityAt.set(leafId, Date.now());
+			this.activityHandler?.({
+				reason,
+				leafId,
+				url,
+				isMainFrame,
+			});
+		};
+
 		addListener<Event>("dom-ready", () => {
 			const url = safeGetWebviewUrl(webview) ?? binding.lastUrl;
 			this.logger.info("Webview DOM ready", {
 				leafId,
 				url,
 			});
-			this.activityHandler?.({
-				reason: "dom-ready",
-				leafId,
-				url,
-				isMainFrame: true,
-			});
+			emitActivity("dom-ready", url, true);
 		});
 
 		addListener<WebviewNavigationEvent>("did-navigate", (event) => {
@@ -236,12 +229,7 @@ export class ViewerManager {
 				isMainFrame: event.isMainFrame ?? true,
 			});
 			if (event.isMainFrame ?? true) {
-				this.activityHandler?.({
-					reason: "did-navigate",
-					leafId,
-					url,
-					isMainFrame: event.isMainFrame ?? true,
-				});
+				emitActivity("did-navigate", url, event.isMainFrame ?? true);
 			}
 		});
 
@@ -253,12 +241,7 @@ export class ViewerManager {
 				isMainFrame: event.isMainFrame ?? true,
 			});
 			if (event.isMainFrame ?? true) {
-				this.activityHandler?.({
-					reason: "did-navigate-in-page",
-					leafId,
-					url,
-					isMainFrame: event.isMainFrame ?? true,
-				});
+				emitActivity("did-navigate-in-page", url, event.isMainFrame ?? true);
 			}
 		});
 
@@ -275,12 +258,7 @@ export class ViewerManager {
 				errorDescription: event.errorDescription,
 			});
 			if (event.isMainFrame ?? true) {
-				this.activityHandler?.({
-					reason: "did-fail-load",
-					leafId,
-					url,
-					isMainFrame: event.isMainFrame ?? true,
-				});
+				emitActivity("did-fail-load", url, event.isMainFrame ?? true);
 			}
 		});
 
@@ -304,12 +282,7 @@ export class ViewerManager {
 				reason: event.reason,
 				exitCode: event.exitCode,
 			});
-			this.activityHandler?.({
-				reason: "render-process-gone",
-				leafId,
-				url,
-				isMainFrame: true,
-			});
+			emitActivity("render-process-gone", url, true);
 		});
 
 		addListener<Event>("destroyed", () => {
@@ -318,12 +291,7 @@ export class ViewerManager {
 				leafId,
 				url,
 			});
-			this.activityHandler?.({
-				reason: "destroyed",
-				leafId,
-				url,
-				isMainFrame: true,
-			});
+			emitActivity("destroyed", url, true);
 		});
 	}
 

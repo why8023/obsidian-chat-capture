@@ -38,26 +38,32 @@ export function renderMessageMarkdown(message: NormalizedMessage): string {
 	return lines.join("\n");
 }
 
-export function renderConversationMarkdown(
+export function buildConversationFrontmatter(
 	snapshot: NormalizedSnapshot,
 	entry: SessionIndexEntry,
-): string {
-	const frontmatter = [
-		"---",
-		`source: ${yamlScalar(snapshot.source)}`,
-		`conversation_key: ${yamlScalar(snapshot.conversationKey)}`,
-		`chat_url: ${yamlScalar(snapshot.pageUrl)}`,
-		`created_at: ${yamlScalar(new Date(entry.createdAt).toISOString())}`,
-		`updated_at: ${yamlScalar(new Date(entry.updatedAt).toISOString())}`,
-		`message_count: ${yamlScalar(entry.lastStableMessageCount)}`,
-		`extractor_version: ${yamlScalar(snapshot.extractorVersion)}`,
-		`page_state: ${yamlScalar(snapshot.pageState)}`,
-		"---",
-	];
+): Record<string, number | string> {
+	const frontmatter: Record<string, number | string> = {
+		source: snapshot.source,
+		conversation_key: snapshot.conversationKey,
+		chat_url: snapshot.pageUrl,
+		created_at: new Date(entry.createdAt).toISOString(),
+		updated_at: new Date(entry.updatedAt).toISOString(),
+		message_count: entry.lastStableMessageCount,
+		extractor_version: snapshot.extractorVersion,
+		page_state: snapshot.pageState,
+	};
 
+	if (snapshot.conversationId) {
+		frontmatter.conversation_id = snapshot.conversationId;
+	}
+
+	return frontmatter;
+}
+
+export function renderConversationBody(
+	snapshot: NormalizedSnapshot,
+): string {
 	const content: string[] = [
-		frontmatter.join("\n"),
-		"",
 		`# ${snapshot.conversationTitle || snapshot.pageTitle || "Untitled conversation"}`,
 		"",
 	];
@@ -70,4 +76,22 @@ export function renderConversationMarkdown(
 	});
 
 	return `${content.join("\n").trimEnd()}\n`;
+}
+
+export function renderConversationMarkdown(
+	snapshot: NormalizedSnapshot,
+	entry: SessionIndexEntry,
+): string {
+	const frontmatter = Object.entries(buildConversationFrontmatter(snapshot, entry)).map(
+		([key, value]) => `${key}: ${yamlScalar(value)}`,
+	);
+
+	return [
+		"---",
+		...frontmatter,
+		"---",
+		"",
+		renderConversationBody(snapshot).trimEnd(),
+		"",
+	].join("\n");
 }

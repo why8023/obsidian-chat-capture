@@ -10,7 +10,7 @@
 - 自动监控当前会话内容，并在变化时增量采集
 - 优先根据回复完成动作判定 Assistant 已完成，并保留文本判稳兜底，避免流式输出过程中频繁覆盖
 - 将每个会话保存为独立 Markdown 文件
-- 通过会话索引做增量更新，避免重复写入
+- 通过 Markdown frontmatter + 内存会话缓存做增量更新，避免重复写入
 - 提供日志、原始快照和运行时诊断，便于调试 DOM 选择器或 Web Viewer 问题
 
 ## 当前实现方案
@@ -22,13 +22,13 @@
 - `src/main.ts`
   负责插件生命周期、依赖装配、状态栏、Ribbon 图标、命令注册、设置页注册。
 - `src/webviewer/`
-  负责打开 Web Viewer、绑定当前叶子、定位真正的 `webview` DOM 节点、恢复上次受控 viewer、监听导航和控制台事件。
+  负责打开 Web Viewer、发现可用的 ChatGPT viewer、定位真正的 `webview` DOM 节点、监听导航和控制台事件。
 - `src/capture/`
   负责构造注入脚本、在页面内收集消息壳、用 Defuddle 解析消息内容、规范化快照、判断回复是否稳定。
 - `src/runtime/`
   负责自动采集主循环，包括绑定、注入、健康检查、事件驱动调度、回退重试、状态切换。
 - `src/persistence/`
-  负责文件路径生成、frontmatter 渲染、Markdown 写入、会话索引维护。
+  负责文件路径生成、frontmatter 渲染、Markdown 写入、基于笔记元数据的会话索引维护。
 - `src/debug/`
   负责内存日志和调试快照落盘。
 - `src/settings/`
@@ -38,10 +38,10 @@
 
 插件启动后的主流程如下：
 
-1. `onload()` 读取 `data.json`，恢复设置和状态。
-2. 初始化 `Logger`、`DebugDumpWriter`、`SessionIndex`、`MarkdownWriter`、`ViewerManager`、`RuntimeController`。
+1. `onload()` 读取 `data.json`，恢复设置和少量运行偏好。
+2. 初始化 `Logger`、`DebugDumpWriter`、`ConversationNoteIndex`、`SessionIndex`、`MarkdownWriter`、`ViewerManager`、`RuntimeController`。
 3. 注册命令、Ribbon 图标、设置页，以及 `active-leaf-change` 和 `layout-change` 监听。
-4. `layout-ready` 后尝试恢复上一次绑定的 ChatGPT Web Viewer。
+4. 启动时扫描保存目录中的 Markdown 笔记，并通过 `MetadataCache` / `Vault` 事件持续维护内存索引。
 5. 如果开启了 `autoCapture` 且没有暂停，运行时控制器开始低频心跳，并在页面变化、导航、重新激活时立即补采。
 6. 每次采集都会经历：定位 Web Viewer -> 注入或复用采集脚本 -> 先做轻量健康检查 -> 必要时收集快照 -> 归一化 -> 稳定性判定 -> 写入 Markdown -> 更新索引。
 
@@ -54,13 +54,11 @@
 绑定逻辑在 `src/webviewer/viewer-manager.ts`：
 
 - `openChatGPTInWebViewer()` 新开一个 `webviewer` leaf，并导航到设置中的 ChatGPT URL。
-- `bindLeaf()` 将当前 leaf 记录为“受控 viewer”，持久化：
-  - `leafId`
-  - `expectedUrlPrefix`
-  - `createdAt`
-  - `lastSeenAt`
-- `restoreControlledViewer()` 在 Obsidian 布局恢复后，尽量找回上次绑定的 viewer。
-- `locateBoundWebview()` 再通过 `WebviewLocator` 在真实 DOM 中找到对应的 `<webview>` 元素。
+- `bindLeaf()` 仅把当前 leaf 设为本次运行的优先 viewer，不再持久化到 `data.json`。
+- `locateBestWebview()` 会在所有已打开的 ChatGPT Web Viewer 中动态选择最值得优先处理的一个：
+  - 当前激活叶子优先
+  - 最近发生导航 / DOM ready 的叶子优先
+  - 手动 `Bind current web viewer` 选中的叶子优先
 
 `src/webviewer/webview-locator.ts` 采用“打分定位”而不是硬编码单个元素引用：
 
@@ -182,13 +180,13 @@
 
 每一轮 `captureOnce()` 的处理顺序：
 
-1. `ensureBinding()` 找到受控 Web Viewer
+1. `ensureBinding()` 在当前工作区里选择最合适的 ChatGPT Web Viewer
 2. `ensureBootstrap()` 执行健康检查，必要时重注入
 3. 如果页面标记为 `dirty`、处于判稳阶段，或尚无缓存快照，则执行 `collect`
 4. 归一化并可选写出调试快照
 5. 调用稳定性检测器判断是否可以持久化
-6. 在会话 URL 还没稳定成 `/c/{id}` 前，自动模式先等待，不立即落盘
-7. 通过 `SessionIndex` 判断是新会话、增量更新、完全重写还是跳过
+6. 在会话 ID 还没稳定前，自动模式先等待，不立即落盘
+7. 通过 `ConversationNoteIndex` 判断对应笔记是否已存在，再由内存 `SessionIndex` 做本次运行内的增量 / skip / regression 判断
 8. 通过 `MarkdownWriter` 写入 Obsidian Vault
 9. 更新状态栏文本和内部索引
 
@@ -202,15 +200,22 @@
 
 - `layout-change` 后强制下次重注入
 - `dom-ready`、`did-navigate`、`did-navigate-in-page` 等 webview 生命周期事件会触发快速补采
-- 当前受控叶子重新激活时，缩短下一次心跳延迟
-- 当前受控叶子失焦后，自动切回低频后台心跳
+- 任意 ChatGPT Web Viewer 重新激活时，缩短下一次心跳延迟
+- 没有活动 ChatGPT Web Viewer 时，自动切回低频后台心跳
 - 设置更新后立即按新参数恢复或暂停采集
 
 ### 8. 会话索引与增量更新
 
-`src/persistence/session-index.ts` 用 `data.json` 中的 `state.sessions` 维护已保存会话索引。
+当前实现将“长期真相源”和“运行态缓存”拆开：
 
-每条会话索引包含：
+- `src/persistence/conversation-note-index.ts`
+  - 以保存目录中的 Markdown/frontmatter 作为真相源
+  - 通过 `MetadataCache` / `Vault` 事件维护 `conversationId -> filePath`
+- `src/persistence/session-index.ts`
+  - 只维护本次运行期间的轻量合并缓存
+  - 不再持久化到 `data.json`
+
+运行态会话缓存包含：
 
 - `conversationKey`
 - `filePath`
@@ -235,6 +240,13 @@
 ### 9. Markdown 落盘方案
 
 `src/persistence/markdown-writer.ts` 负责真正写文件。
+
+- 将 frontmatter 和正文渲染为完整 Markdown 文档
+- 更新时使用单次 `Vault.process()` / `Vault.create()` 写入，避免前后两次写入带来的索引竞态
+- frontmatter 至少包含：
+  - `conversation_id`
+  - `conversation_key`
+  - `chat_url`
 
 文件名生成规则在 `src/persistence/file-path.ts`：
 
@@ -424,11 +436,9 @@ npm run lint
 - `settings`
   - 插件配置项
 - `state`
-  - 当前绑定的 Web Viewer
-  - 已写入会话索引
   - 自动采集是否暂停
 
-这使得插件在 Obsidian 重启或布局恢复后，能够尽量续上之前的受控会话。
+会话笔记是否已存在，不再依赖 `data.json` 中的持久化 session 表，而是直接以保存目录中的 Markdown/frontmatter 为准。
 
 ## 后续可演进方向
 

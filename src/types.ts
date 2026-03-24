@@ -31,13 +31,6 @@ export interface PluginSettings {
 	debugMode: boolean;
 }
 
-export interface ControlledViewerRef {
-	leafId: string;
-	expectedUrlPrefix: string;
-	createdAt: number;
-	lastSeenAt: number;
-}
-
 export interface TurnActionFlags {
 	hasCopyButton: boolean;
 	hasThumbActions: boolean;
@@ -83,6 +76,7 @@ export interface NormalizedMessage {
 export interface NormalizedSnapshot {
 	source: "chatgpt-webviewer";
 	extractorVersion: string;
+	conversationId?: string;
 	conversationKey: string;
 	conversationTitle: string;
 	pageUrl: string;
@@ -112,10 +106,19 @@ export interface SessionIndexEntry {
 	messages: SessionMessageIndex[];
 }
 
+export interface ConversationNoteEntry {
+	filePath: string;
+	conversationId?: string;
+	conversationKey?: string;
+	chatUrl?: string;
+	title?: string;
+	createdAt?: number;
+	updatedAt?: number;
+	messageCount?: number;
+}
+
 export interface PluginStateData {
 	version: string;
-	controlledViewer?: ControlledViewerRef;
-	sessions: Record<string, SessionIndexEntry>;
 	capturePaused: boolean;
 }
 

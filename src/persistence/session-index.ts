@@ -1,7 +1,7 @@
 import type {
+	ConversationNoteEntry,
 	NormalizedMessage,
 	NormalizedSnapshot,
-	PluginStateData,
 	SessionIndexEntry,
 	SessionMessageIndex,
 } from "../types";
@@ -63,33 +63,54 @@ function compareSessionMatches(left: SessionEntryMatch, right: SessionEntryMatch
 }
 
 export class SessionIndex {
-	constructor(
-		private readonly state: PluginStateData,
-		private readonly persistState: () => Promise<void>,
-	) {}
+	private readonly sessions: Record<string, SessionIndexEntry> = {};
 
 	get(conversationKey: string): SessionIndexEntry | undefined {
-		return this.state.sessions[conversationKey];
+		return this.sessions[conversationKey];
 	}
 
 	entries(): SessionIndexEntry[] {
-		return Object.values(this.state.sessions);
+		return Object.values(this.sessions);
 	}
 
 	private findMatchesBySourceUrl(sourceUrl: string): SessionEntryMatch[] {
-		return Object.entries(this.state.sessions)
+		return Object.entries(this.sessions)
 			.filter(([, entry]) => entry.sourceUrl === sourceUrl)
 			.map(([key, entry]) => ({ key, entry }))
 			.sort(compareSessionMatches);
 	}
 
-	prepare(snapshot: NormalizedSnapshot, filePath: string): PreparedSessionMerge {
-		const exactMatch = this.state.sessions[snapshot.conversationKey];
+	private createEntryFromNote(
+		note: ConversationNoteEntry,
+		snapshot: NormalizedSnapshot,
+		filePath: string,
+	): SessionIndexEntry {
+		return {
+			conversationKey: snapshot.conversationKey,
+			filePath: note.filePath || filePath,
+			sourceUrl: note.chatUrl ?? snapshot.pageUrl,
+			title: note.title ?? snapshot.conversationTitle,
+			createdAt: note.createdAt ?? snapshot.capturedAt,
+			updatedAt: note.updatedAt ?? snapshot.capturedAt,
+			lastStableMessageCount: note.messageCount ?? 0,
+			lastSnapshotHash: "",
+			messages: [],
+		};
+	}
+
+	prepare(
+		snapshot: NormalizedSnapshot,
+		filePath: string,
+		existingNote?: ConversationNoteEntry,
+	): PreparedSessionMerge {
+		const exactMatch = this.sessions[snapshot.conversationKey];
 		const sourceUrlMatches = this.findMatchesBySourceUrl(snapshot.pageUrl);
 		const existingMatch = exactMatch
 			? { key: snapshot.conversationKey, entry: exactMatch }
 			: sourceUrlMatches[0];
-		const existing = existingMatch?.entry;
+		const existing =
+			existingMatch?.entry ??
+			(existingNote ? this.createEntryFromNote(existingNote, snapshot, filePath) : undefined);
 		const replacedKeys = sourceUrlMatches
 			.map((match) => match.key)
 			.filter((key) => key !== snapshot.conversationKey);
@@ -162,10 +183,9 @@ export class SessionIndex {
 	async commit(entry: SessionIndexEntry, replacedKeys: string[] = []): Promise<void> {
 		for (const key of replacedKeys) {
 			if (key !== entry.conversationKey) {
-				delete this.state.sessions[key];
+				delete this.sessions[key];
 			}
 		}
-		this.state.sessions[entry.conversationKey] = entry;
-		await this.persistState();
+		this.sessions[entry.conversationKey] = entry;
 	}
 }

@@ -1,3 +1,4 @@
+import { normalizePath } from "obsidian";
 import { DEFAULT_PLUGIN_STATE, DEFAULT_SETTINGS } from "../constants";
 import type {
 	PersistedPluginData,
@@ -20,7 +21,8 @@ function clampInteger(
 }
 
 function normalizeFolder(input: string | undefined, fallback: string): string {
-	const normalized = (input ?? fallback).trim().replace(/^\/+|\/+$/g, "");
+	const candidate = (input ?? fallback).trim().replace(/^\/+|\/+$/g, "");
+	const normalized = normalizePath(candidate || fallback).replace(/^\/+|\/+$/g, "");
 	return normalized || fallback;
 }
 
@@ -83,8 +85,6 @@ export function normalizePluginState(
 ): PluginStateData {
 	return {
 		version: DEFAULT_PLUGIN_STATE.version,
-		controlledViewer: data?.controlledViewer,
-		sessions: data?.sessions ?? {},
 		capturePaused: data?.capturePaused ?? DEFAULT_PLUGIN_STATE.capturePaused,
 	};
 }

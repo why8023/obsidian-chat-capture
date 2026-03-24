@@ -24,6 +24,5 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 
 export const DEFAULT_PLUGIN_STATE: PluginStateData = {
 	version: PLUGIN_STATE_VERSION,
-	sessions: {},
 	capturePaused: false,
 };

@@ -9,6 +9,7 @@ import { StabilityDetector } from "../capture/stability-detector";
 import type { SnapshotNormalizer } from "../capture/snapshot-normalizer";
 import { DebugDumpWriter } from "../debug/debug-dump";
 import { Logger } from "../debug/logger";
+import { ConversationNoteIndex } from "../persistence/conversation-note-index";
 import { MarkdownWriter } from "../persistence/markdown-writer";
 import { SessionIndex } from "../persistence/session-index";
 import type {
@@ -43,6 +44,7 @@ interface RuntimeControllerDeps {
 	state: () => PluginStateData;
 	persistState: () => Promise<void>;
 	viewerManager: ViewerManager;
+	noteIndex: ConversationNoteIndex;
 	sessionIndex: SessionIndex;
 	markdownWriter: MarkdownWriter;
 	normalizer: SnapshotNormalizer;
@@ -69,7 +71,6 @@ export class RuntimeController {
 	constructor(private readonly deps: RuntimeControllerDeps) {}
 
 	async handleLayoutReady(): Promise<void> {
-		await this.deps.viewerManager.restoreControlledViewer();
 		if (this.deps.settings().autoCapture && !this.deps.state().capturePaused) {
 			await this.resume("layout-ready");
 			return;
@@ -82,13 +83,15 @@ export class RuntimeController {
 		this.forceReinject = true;
 		if (this.deps.settings().autoCapture && !this.deps.state().capturePaused) {
 			this.scheduleNextTick(
-				this.deps.viewerManager.isControlledLeafActive() ? 500 : this.backgroundIdleDelay(),
+				this.deps.viewerManager.isAnyChatGPTLeafActive()
+					? 500
+					: this.backgroundIdleDelay(),
 			);
 		}
 	}
 
 	async handleActiveLeafChange(): Promise<void> {
-		if (this.deps.viewerManager.isControlledLeafActive()) {
+		if (this.deps.viewerManager.isAnyChatGPTLeafActive()) {
 			this.scheduleNextTick(250);
 			return;
 		}
@@ -208,7 +211,7 @@ export class RuntimeController {
 		let captureStage = "binding";
 		let binding: WebviewBinding | null = null;
 		let diagnostics: CaptureDiagnostics | undefined;
-		let activeLeaf = this.deps.viewerManager.isControlledLeafActive();
+		let activeLeaf = false;
 
 		try {
 			binding = await this.ensureBinding();
@@ -220,7 +223,7 @@ export class RuntimeController {
 				return false;
 			}
 
-			activeLeaf = this.deps.viewerManager.isControlledLeafActive();
+			activeLeaf = this.deps.viewerManager.isLeafActive(binding.leafId);
 
 			this.logDebug("Capture tick bound webview", {
 				forcePersist,
@@ -340,24 +343,30 @@ export class RuntimeController {
 
 			if (
 				!forcePersist &&
-				!this.hasStableConversationUrl(normalized.pageUrl) &&
+				!this.hasStableConversationIdentity(normalized) &&
+				!this.deps.noteIndex.findMatch(normalized) &&
 				!this.deps.sessionIndex.get(normalized.conversationKey)
 			) {
 				nextDelay = Math.min(this.deps.settings().pollIntervalMs, 1_000);
-				this.deps.onStatusChange("Chat capture: waiting for conversation URL");
+				this.deps.onStatusChange("Chat capture: waiting for conversation id");
 				return false;
 			}
 
 			this.stateMachine.force("saving");
 			captureStage = "write-snapshot";
 			const existingEntry = this.deps.sessionIndex.get(normalized.conversationKey);
+			const existingNote = this.deps.noteIndex.findMatch(normalized);
 			const filePath =
 				existingEntry?.filePath ??
+				existingNote?.filePath ??
 				(await this.deps.markdownWriter.resolveFilePath(
 					normalized,
-					this.deps.sessionIndex.entries().map((entry) => entry.filePath),
+					[
+						...this.deps.noteIndex.filePaths(),
+						...this.deps.sessionIndex.entries().map((entry) => entry.filePath),
+					],
 				));
-			const merge = this.deps.sessionIndex.prepare(normalized, filePath);
+			const merge = this.deps.sessionIndex.prepare(normalized, filePath, existingNote);
 			if (merge.skipReason) {
 				this.deps.logger.warn("Skipped regressive snapshot", {
 					conversationKey: normalized.conversationKey,
@@ -370,6 +379,7 @@ export class RuntimeController {
 
 			if (merge.changed) {
 				await this.deps.markdownWriter.writeSnapshot(normalized, merge.entry);
+				this.deps.noteIndex.upsertFromSnapshot(normalized, merge.entry);
 			}
 			if (merge.changed || merge.replacedKeys.length > 0) {
 				await this.deps.sessionIndex.commit(merge.entry, merge.replacedKeys);
@@ -428,19 +438,7 @@ export class RuntimeController {
 	}
 
 	private async ensureBinding(): Promise<WebviewBinding | null> {
-		let binding = this.deps.viewerManager.locateBoundWebview();
-		if (binding) {
-			return binding;
-		}
-
-		await this.deps.viewerManager.restoreControlledViewer();
-		binding = this.deps.viewerManager.locateBoundWebview();
-		if (binding) {
-			return binding;
-		}
-
-		await this.deps.viewerManager.bindActiveChatGPTViewer();
-		return this.deps.viewerManager.locateBoundWebview();
+		return this.deps.viewerManager.locateBestWebview();
 	}
 
 	private async ensureBootstrap(
@@ -583,6 +581,14 @@ export class RuntimeController {
 			return true;
 		}
 
+		if (
+			health.pageState === "conversation" &&
+			this.hasStableConversationIdentity({ pageUrl: health.url }) &&
+			!this.deps.noteIndex.hasConversationForUrl(health.url)
+		) {
+			return true;
+		}
+
 		return false;
 	}
 
@@ -590,8 +596,11 @@ export class RuntimeController {
 		return Math.max(this.deps.settings().pollIntervalMs * 10, 15_000);
 	}
 
-	private hasStableConversationUrl(pageUrl: string): boolean {
-		return /\/c\/[^/?#]+/i.test(pageUrl);
+	private hasStableConversationIdentity(snapshot: {
+		conversationId?: string;
+		pageUrl: string;
+	}): boolean {
+		return Boolean(snapshot.conversationId) || /\/c\/[^/?#]+/i.test(snapshot.pageUrl);
 	}
 
 	private nextIntervalFor(

@@ -151,6 +151,7 @@ export class SnapshotNormalizer {
 		return {
 			source: "chatgpt-webviewer",
 			extractorVersion: snapshot.extractorVersion,
+			conversationId: conversationId || undefined,
 			conversationKey,
 			conversationTitle,
 			pageUrl: snapshot.pageUrl,

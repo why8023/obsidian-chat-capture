@@ -42,21 +42,27 @@ export class MarkdownWriter {
 	async writeSnapshot(
 		snapshot: NormalizedSnapshot,
 		entry: SessionIndexEntry,
-	): Promise<void> {
+	): Promise<TFile> {
 		const content = renderConversationMarkdown(snapshot, entry);
 		await this.ensureFolder(entry.filePath);
 
 		const existing = this.app.vault.getAbstractFileByPath(entry.filePath);
 		if (existing instanceof TFile) {
 			await this.app.vault.process(existing, () => content);
-		} else {
-			await this.app.vault.create(entry.filePath, content);
+			this.logger.info("Conversation note written", {
+				filePath: entry.filePath,
+				messageCount: entry.lastStableMessageCount,
+			});
+			return existing;
 		}
+
+		const file = await this.app.vault.create(entry.filePath, content);
 
 		this.logger.info("Conversation note written", {
 			filePath: entry.filePath,
 			messageCount: entry.lastStableMessageCount,
 		});
+		return file;
 	}
 
 	private async ensureFolder(filePath: string): Promise<void> {

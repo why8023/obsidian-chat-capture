@@ -8,6 +8,7 @@ import { registerCommands } from "./commands";
 import { SnapshotNormalizer } from "./capture/snapshot-normalizer";
 import { DebugDumpWriter } from "./debug/debug-dump";
 import { CaptureLogModal, Logger } from "./debug/logger";
+import { ConversationNoteIndex } from "./persistence/conversation-note-index";
 import { MarkdownWriter } from "./persistence/markdown-writer";
 import { SessionIndex } from "./persistence/session-index";
 import { RuntimeController } from "./runtime/runtime-controller";
@@ -25,6 +26,7 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 	state: PluginStateData = DEFAULT_PLUGIN_STATE;
 	logger!: Logger;
 	debugDump!: DebugDumpWriter;
+	noteIndex!: ConversationNoteIndex;
 	sessionIndex!: SessionIndex;
 	markdownWriter!: MarkdownWriter;
 	viewerManager!: ViewerManager;
@@ -41,23 +43,25 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 			() => this.settings.debugMode || this.settings.saveRawSnapshot,
 			this.logger,
 		);
-		this.sessionIndex = new SessionIndex(this.state, () => this.persistPluginData());
+		this.noteIndex = new ConversationNoteIndex(
+			this.app,
+			() => this.settings,
+			this.logger,
+		);
+		await this.noteIndex.rebuild();
+		this.sessionIndex = new SessionIndex();
 		this.markdownWriter = new MarkdownWriter(
 			this.app,
 			() => this.settings,
 			this.logger,
 		);
-		this.viewerManager = new ViewerManager(
-			this.app,
-			this.logger,
-			() => this.state,
-			() => this.persistPluginData(),
-		);
+		this.viewerManager = new ViewerManager(this.app, this.logger);
 		this.runtime = new RuntimeController({
 			settings: () => this.settings,
 			state: () => this.state,
 			persistState: () => this.persistPluginData(),
 			viewerManager: this.viewerManager,
+			noteIndex: this.noteIndex,
 			sessionIndex: this.sessionIndex,
 			markdownWriter: this.markdownWriter,
 			normalizer: new SnapshotNormalizer(),
@@ -78,6 +82,41 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 		this.addSettingTab(new ChatCaptureSettingTab(this.app, this));
 		registerCommands(this);
 
+		this.registerEvent(
+			this.app.metadataCache.on("changed", (file, _data, cache) => {
+				this.noteIndex.handleMetadataChanged(file, cache);
+			}),
+		);
+		this.registerEvent(
+			this.app.metadataCache.on("deleted", (file) => {
+				this.noteIndex.handleMetadataDeleted(file);
+			}),
+		);
+		this.registerEvent(
+			this.app.metadataCache.on("resolved", () => {
+				void this.noteIndex.rebuild();
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("create", (file) => {
+				this.noteIndex.handleVaultTouch(file);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("modify", (file) => {
+				this.noteIndex.handleVaultTouch(file);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("rename", (file, oldPath) => {
+				this.noteIndex.handleVaultRename(file, oldPath);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on("delete", (file) => {
+				this.noteIndex.handleVaultDelete(file);
+			}),
+		);
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
 				void this.runtime.handleActiveLeafChange();
@@ -160,11 +199,15 @@ export default class ObsidianChatCapturePlugin extends Plugin {
 	}
 
 	async updateSettings(patch: Partial<PluginSettings>): Promise<void> {
+		const previousSaveFolder = this.settings.saveFolder;
 		this.settings = normalizePluginSettings({
 			...this.settings,
 			...patch,
 		});
 		await this.persistPluginData();
+		if (previousSaveFolder !== this.settings.saveFolder) {
+			await this.noteIndex.rebuild();
+		}
 		await this.runtime.handleSettingsUpdated();
 	}
 

@@ -314,7 +314,9 @@ export class ConversationNoteIndex {
 			conversationKey,
 			conversationAliasKey,
 			chatUrl,
-			title: file.basename,
+			title:
+				normalizeString(readConversationFrontmatterEntry(frontmatter, "title")) ??
+				file.basename,
 			createdAt: parseTimestamp(
 				readConversationFrontmatterEntry(frontmatter, "createdAt"),
 			),

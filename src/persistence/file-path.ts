@@ -3,6 +3,11 @@ import { resolveSaveFolderForUrl } from "../settings/chat-targets";
 import type { NormalizedSnapshot, PluginSettings } from "../types";
 import { formatLocalDate } from "./date-format";
 
+export type ConversationFilePathSource = Pick<
+	NormalizedSnapshot,
+	"capturedAt" | "conversationKey" | "conversationTitle" | "pageTitle" | "pageUrl"
+>;
+
 export function sanitizeFileSegment(value: string): string {
 	const sanitized = value
 		.replace(/[\\/:*?"<>|#%&{}$!'@+=`]/g, " ")
@@ -13,7 +18,7 @@ export function sanitizeFileSegment(value: string): string {
 
 export function buildConversationFilePath(
 	settings: PluginSettings,
-	snapshot: NormalizedSnapshot,
+	snapshot: ConversationFilePathSource,
 	suffix = "",
 ): string {
 	const saveFolder = resolveSaveFolderForUrl(settings, snapshot.pageUrl);

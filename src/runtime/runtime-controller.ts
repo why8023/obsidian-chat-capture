@@ -382,16 +382,14 @@ export class RuntimeController {
 			captureStage = "write-snapshot";
 			const existingEntry = this.deps.sessionIndex.get(normalized.conversationKey);
 			const existingNote = this.deps.noteIndex.findMatch(normalized);
+			const knownFilePaths = [
+				...this.deps.noteIndex.filePaths(),
+				...this.deps.sessionIndex.entries().map((entry) => entry.filePath),
+			];
 			const filePath =
 				existingEntry?.filePath ??
 				existingNote?.filePath ??
-				(await this.deps.markdownWriter.resolveFilePath(
-					normalized,
-					[
-						...this.deps.noteIndex.filePaths(),
-						...this.deps.sessionIndex.entries().map((entry) => entry.filePath),
-					],
-				));
+				(await this.deps.markdownWriter.resolveFilePath(normalized, knownFilePaths));
 			const merge = this.deps.sessionIndex.prepare(normalized, filePath, existingNote);
 			if (merge.skipReason) {
 				this.deps.logger.warn("Skipped regressive snapshot", {
@@ -412,7 +410,7 @@ export class RuntimeController {
 				(await this.deps.markdownWriter.needsFrontmatterTimestampRewrite(
 					merge.entry.filePath,
 				));
-			const persistedEntry =
+			let persistedEntry =
 				rewriteFrontmatterTimestamps
 					? {
 							...merge.entry,
@@ -433,6 +431,16 @@ export class RuntimeController {
 			let writtenFile: TFile | null = null;
 
 			if (merge.changed || rewriteFrontmatterTimestamps) {
+				const previousTitle = existingEntry?.title ?? existingNote?.title;
+				persistedEntry = {
+					...persistedEntry,
+					filePath: await this.deps.markdownWriter.reconcileManagedFilePath(
+						normalized,
+						persistedEntry,
+						previousTitle,
+						knownFilePaths,
+					),
+				};
 				writtenFile = await this.deps.markdownWriter.writeSnapshot(
 					normalized,
 					persistedEntry,
@@ -440,7 +448,7 @@ export class RuntimeController {
 				this.deps.noteIndex.upsertFromSnapshot(normalized, persistedEntry);
 			}
 			if (merge.changed || merge.replacedKeys.length > 0) {
-				await this.deps.sessionIndex.commit(merge.entry, merge.replacedKeys);
+				await this.deps.sessionIndex.commit(persistedEntry, merge.replacedKeys);
 			}
 			if (merge.changed && writtenFile) {
 				await this.deps.postProcessor.run(writtenFile);
@@ -450,17 +458,17 @@ export class RuntimeController {
 			this.awaitingStability = false;
 			if (merge.changed) {
 				const statusMessage = formatObarUiText(
-					`saved ${merge.entry.lastStableMessageCount} messages`,
+					`saved ${persistedEntry.lastStableMessageCount} messages`,
 				);
 				this.deps.onStatusChange(statusMessage);
 				return this.reportResult({
 					status: "saved",
 					statusMessage,
-					filePath: merge.entry.filePath,
-					messageCount: merge.entry.lastStableMessageCount,
+					filePath: persistedEntry.filePath,
+					messageCount: persistedEntry.lastStableMessageCount,
 					created: merge.created,
 					newMessageCount: merge.newMessages.length,
-					title: merge.entry.title,
+					title: persistedEntry.title,
 				});
 			}
 

@@ -26,6 +26,7 @@ export const OBAR_CONVERSATION_SOURCE = "obar-chatgpt-webviewer";
 export const OBAR_CONVERSATION_FRONTMATTER_KEYS = {
 	source: "obar_source",
 	conversationKey: "obar_conversation_key",
+	title: "obar_conversation_title",
 	chatUrl: "obar_chat_url",
 	createdAt: "obar_created_at",
 	updatedAt: "obar_updated_at",
@@ -50,6 +51,7 @@ const CONVERSATION_FRONTMATTER_KEY_FALLBACKS: Record<
 		OBAR_CONVERSATION_FRONTMATTER_KEYS.conversationKey,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.conversationKey,
 	],
+	title: [OBAR_CONVERSATION_FRONTMATTER_KEYS.title],
 	chatUrl: [
 		OBAR_CONVERSATION_FRONTMATTER_KEYS.chatUrl,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.chatUrl,
@@ -254,6 +256,7 @@ export function buildConversationFrontmatter(
 	const frontmatter: Record<string, number | string> = {
 		[getConversationFrontmatterKey("source")]: snapshot.source,
 		[getConversationFrontmatterKey("conversationKey")]: snapshot.conversationKey,
+		[getConversationFrontmatterKey("title")]: entry.title || snapshot.conversationTitle,
 		[getConversationFrontmatterKey("chatUrl")]: snapshot.pageUrl,
 		[getConversationFrontmatterKey("createdAt")]: formatLocalTimestamp(entry.createdAt),
 		[getConversationFrontmatterKey("updatedAt")]: formatLocalTimestamp(entry.updatedAt),

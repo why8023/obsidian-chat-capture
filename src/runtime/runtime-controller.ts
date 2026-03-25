@@ -17,11 +17,13 @@ import { MarkdownPostProcessor } from "../post-processing/markdown-post-processo
 import type {
 	CaptureRunResult,
 	CaptureDiagnostics,
+	ConversationNoteEntry,
 	ConversationSnapshot,
 	PluginSettings,
 	PluginStateData,
 	ScriptExecutionResult,
 	SerializedError,
+	SessionIndexEntry,
 	WebviewActivityEvent,
 	WebviewBinding,
 } from "../types";
@@ -380,8 +382,19 @@ export class RuntimeController {
 
 			this.stateMachine.force("saving");
 			captureStage = "write-snapshot";
-			const existingEntry = this.deps.sessionIndex.get(normalized.conversationKey);
 			const existingNote = this.deps.noteIndex.findMatch(normalized);
+			const rawExistingEntry = this.deps.sessionIndex.get(normalized.conversationKey);
+			const existingEntry = this.reconcileSessionEntryWithNote(
+				rawExistingEntry,
+				existingNote,
+			);
+			if (
+				rawExistingEntry &&
+				existingEntry &&
+				!this.isSameSessionEntryReference(rawExistingEntry, existingEntry)
+			) {
+				await this.deps.sessionIndex.commit(existingEntry);
+			}
 			const knownFilePaths = [
 				...this.deps.noteIndex.filePaths(),
 				...this.deps.sessionIndex.entries().map((entry) => entry.filePath),
@@ -694,6 +707,33 @@ export class RuntimeController {
 		pageUrl: string;
 	}): boolean {
 		return Boolean(snapshot.conversationId) || /\/c\/[^/?#]+/i.test(snapshot.pageUrl);
+	}
+
+	private reconcileSessionEntryWithNote(
+		entry: SessionIndexEntry | undefined,
+		note: ConversationNoteEntry | undefined,
+	): SessionIndexEntry | undefined {
+		if (!entry || !note) {
+			return entry;
+		}
+
+		return {
+			...entry,
+			filePath: note.filePath || entry.filePath,
+			sourceUrl: note.chatUrl ?? entry.sourceUrl,
+			title: note.title ?? entry.title,
+		};
+	}
+
+	private isSameSessionEntryReference(
+		left: SessionIndexEntry,
+		right: SessionIndexEntry,
+	): boolean {
+		return (
+			left.filePath === right.filePath &&
+			left.sourceUrl === right.sourceUrl &&
+			left.title === right.title
+		);
 	}
 
 	private nextIntervalFor(

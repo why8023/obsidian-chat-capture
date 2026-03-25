@@ -11,6 +11,7 @@
 - 优先根据回复完成动作判定 Assistant 已完成，并保留文本判稳兜底，避免流式输出过程中频繁覆盖
 - 将每个会话保存为独立 Markdown 文件
 - 通过 Markdown frontmatter + 内存会话缓存做增量更新，避免重复写入
+- 支持在记录文件中插入自定义 note 区域，并在后续更新时保留这些用户内容
 - 提供日志、原始快照和运行时诊断，便于调试 DOM 选择器或 Web Viewer 问题
 
 ## 当前实现方案
@@ -243,6 +244,7 @@
 
 - 将 frontmatter 和正文渲染为完整 Markdown 文档
 - 更新时使用单次 `Vault.process()` / `Vault.create()` 写入，避免前后两次写入带来的索引竞态
+- 显式 custom note 区域会在更新时按原位置尽量回填
 - frontmatter 至少包含：
   - `obar_conversation_id`
   - `obar_conversation_key`
@@ -290,6 +292,16 @@ obar_page_state: "conversation"
 
 代码块会保留 fenced code block，并尽量保留语言标记。每条消息的一级标题会保留 `USER / AI` 前缀，并追加一段从消息内容提取出的单行摘要，方便在大纲里区分不同轮次；摘要会压缩空白、去掉常见的 Markdown 起始标记，并在过长时按设置里的摘要长度截断，默认值为 `40`，避免破坏标题语法。消息正文里只有一级标题会下调一级，二级及以下标题保持原样；每个新一轮 `USER` 开始前还可以插入可配置的分隔符，默认是 `---`。
 
+如果希望明确声明一段内容由用户维护，可以使用下面的语法：
+
+```md
+<!-- OBAR-CUSTOM-NOTE-START:UUID-->
+这里的内容在后续更新时会保留。
+<!-- OBAR-CUSTOM-NOTE-END:UUID-->
+```
+
+插件提供 `Insert custom note` 命令在当前光标位置插入这个结构。要保留用户内容，请显式使用这个包裹语法。
+
 ### 10. 设置与命令
 
 设置项定义在 `src/settings/setting-tab.ts`，当前支持：
@@ -312,12 +324,14 @@ obar_page_state: "conversation"
 - `Open web viewer`
 - `Bind current web viewer`
 - `Save current session`
+- `Insert custom note`
 - `Pause auto capture`
 - `Resume auto capture`
 
 其中：
 
 - `Save current session` 会强制执行一次采集并直接进入保存流程
+- `Insert custom note` 会在当前编辑器光标位置插入一个带随机 UUID 的 custom note 区域；如果当前有选中文本，则会直接包裹选中内容
 
 ### 11. 调试与诊断
 
@@ -347,7 +361,7 @@ obar_page_state: "conversation"
 - 页面抽取仍然依赖 DOM 结构和选择器，ChatGPT 前端大改版后可能需要更新 selector profile
 - Defuddle 解决的是“消息内容清洗”，不会替代消息边界识别、角色识别和完成态识别
 - 自动采集现在是“页面内 MutationObserver 驱动 + 宿主低频心跳”的混合模式，不再持续高频空轮询
-- Markdown 写入以“整篇重建当前稳定快照”为主，不保留历史版本差异
+- Markdown 写入仍以“当前稳定快照”为主，但会优先保留用户显式声明的 custom note 区域
 - 目前没有针对图片、附件、复杂富文本、分支对话树做专门建模
 
 ## 目录结构

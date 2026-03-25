@@ -1,5 +1,6 @@
 import type ObarPlugin from "../main";
 import { bindCurrentViewerCommand } from "./bind-current-viewer";
+import { insertCustomNoteCommand } from "./insert-custom-note";
 import { openCurrentSessionRecordCommand } from "./open-current-session-record";
 import { openConfiguredChatViewerCommand } from "./open-chatgpt";
 import { saveNowCommand } from "./save-now";
@@ -34,6 +35,14 @@ export function registerCommands(plugin: ObarPlugin): void {
 		name: "Open current session record",
 		callback: () => {
 			void openCurrentSessionRecordCommand(plugin);
+		},
+	});
+
+	plugin.addCommand({
+		id: "insert-custom-note",
+		name: "Insert custom note",
+		editorCallback: (editor) => {
+			insertCustomNoteCommand(editor);
 		},
 	});
 

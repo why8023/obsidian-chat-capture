@@ -5,6 +5,7 @@ import {
 	buildConversationFilePath,
 	type ConversationFilePathSource,
 } from "./file-path";
+import { mergeConversationMarkdownWithCustomNotes } from "./custom-note-blocks";
 import { renderConversationMarkdown } from "./frontmatter";
 
 const UTC_FRONTMATTER_TIMESTAMP_PATTERN =
@@ -87,7 +88,12 @@ export class MarkdownWriter {
 
 		const existing = this.app.vault.getAbstractFileByPath(entry.filePath);
 		if (existing instanceof TFile) {
-			await this.app.vault.process(existing, () => content);
+			await this.app.vault.process(existing, (current) =>
+				mergeConversationMarkdownWithCustomNotes({
+					existingContent: current,
+					renderedContent: content,
+				}),
+			);
 			this.logger.info("Conversation note written", {
 				filePath: entry.filePath,
 				messageCount: entry.lastStableMessageCount,

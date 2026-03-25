@@ -22,7 +22,6 @@ const LEGACY_CONVERSATION_FRONTMATTER_KEYS = {
 
 const LEGACY_CONVERSATION_SOURCE = "chatgpt-webviewer";
 export const OBAR_CONVERSATION_SOURCE = "obar-chatgpt-webviewer";
-const MESSAGE_HEADING_SUMMARY_MAX_LENGTH = 80;
 
 export const OBAR_CONVERSATION_FRONTMATTER_KEYS = {
 	source: "obar_source",
@@ -126,11 +125,14 @@ function truncateHeadingSummary(value: string, maxLength: number): string {
 	return `${value.slice(0, maxLength).trimEnd()}...`;
 }
 
-function buildMessageHeading(message: NormalizedMessage): string {
+function buildMessageHeading(
+	message: NormalizedMessage,
+	maxSummaryLength: number,
+): string {
 	const roleHeading = headingForRole(message.role);
 	const summary = truncateHeadingSummary(
 		sanitizeHeadingSummary(message.text || message.markdown),
-		MESSAGE_HEADING_SUMMARY_MAX_LENGTH,
+		maxSummaryLength,
 	);
 
 	return summary ? `${roleHeading}: ${summary}` : roleHeading;
@@ -232,11 +234,17 @@ export function isSupportedConversationSource(value: string | undefined): boolea
 	return value === OBAR_CONVERSATION_SOURCE || value === LEGACY_CONVERSATION_SOURCE;
 }
 
-export function renderMessageMarkdown(message: NormalizedMessage): string {
+export function renderMessageMarkdown(
+	message: NormalizedMessage,
+	settings: Pick<PluginSettings, "messageHeadingSummaryLength">,
+): string {
 	const content = renderMessageContent(message);
 	return content
-		? [`# ${buildMessageHeading(message)}`, content].join("\n\n")
-		: `# ${buildMessageHeading(message)}`;
+		? [
+				`# ${buildMessageHeading(message, settings.messageHeadingSummaryLength)}`,
+				content,
+			].join("\n\n")
+		: `# ${buildMessageHeading(message, settings.messageHeadingSummaryLength)}`;
 }
 
 export function buildConversationFrontmatter(
@@ -266,7 +274,10 @@ export function buildConversationFrontmatter(
 
 export function renderConversationBody(
 	snapshot: NormalizedSnapshot,
-	settings: Pick<PluginSettings, "conversationRoundSeparator">,
+	settings: Pick<
+		PluginSettings,
+		"conversationRoundSeparator" | "messageHeadingSummaryLength"
+	>,
 ): string {
 	const blocks: string[] = [];
 	const separator = settings.conversationRoundSeparator.trim();
@@ -276,7 +287,7 @@ export function renderConversationBody(
 			blocks.push(separator);
 		}
 
-		blocks.push(renderMessageMarkdown(message));
+		blocks.push(renderMessageMarkdown(message, settings));
 	});
 
 	return `${blocks.join("\n\n").trimEnd()}\n`;
@@ -285,7 +296,10 @@ export function renderConversationBody(
 export function renderConversationMarkdown(
 	snapshot: NormalizedSnapshot,
 	entry: SessionIndexEntry,
-	settings: Pick<PluginSettings, "conversationRoundSeparator">,
+	settings: Pick<
+		PluginSettings,
+		"conversationRoundSeparator" | "messageHeadingSummaryLength"
+	>,
 ): string {
 	const frontmatter = Object.entries(buildConversationFrontmatter(snapshot, entry)).map(
 		([key, value]) => `${key}: ${yamlScalar(value)}`,

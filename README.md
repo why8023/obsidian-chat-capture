@@ -288,7 +288,7 @@ obar_page_state: "conversation"
 ...
 ```
 
-代码块会保留 fenced code block，并尽量保留语言标记。每条消息的一级标题会保留 `USER / AI` 前缀，并追加一段从消息内容提取出的单行摘要，方便在大纲里区分不同轮次；摘要会压缩空白、去掉常见的 Markdown 起始标记，并在过长时截断，避免破坏标题语法。消息正文里只有一级标题会下调一级，二级及以下标题保持原样；每个新一轮 `USER` 开始前还可以插入可配置的分隔符，默认是 `---`。
+代码块会保留 fenced code block，并尽量保留语言标记。每条消息的一级标题会保留 `USER / AI` 前缀，并追加一段从消息内容提取出的单行摘要，方便在大纲里区分不同轮次；摘要会压缩空白、去掉常见的 Markdown 起始标记，并在过长时按设置里的摘要长度截断，默认值为 `40`，避免破坏标题语法。消息正文里只有一级标题会下调一级，二级及以下标题保持原样；每个新一轮 `USER` 开始前还可以插入可配置的分隔符，默认是 `---`。
 
 ### 10. 设置与命令
 
@@ -298,6 +298,7 @@ obar_page_state: "conversation"
 - Save folder
 - File name template
 - Conversation separator
+- Message heading summary length
 - Poll interval
 - Settle repeat count
 - Settle timeout

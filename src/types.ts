@@ -33,6 +33,7 @@ export interface PluginSettings {
 	chatTargets: ChatTargetRule[];
 	fileNameTemplate: string;
 	conversationRoundSeparator: string;
+	messageHeadingSummaryLength: number;
 	postProcessing: PostProcessingSettings;
 	pollIntervalMs: number;
 	settleRepeatCount: number;

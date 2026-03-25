@@ -33,6 +33,15 @@ export class ObarSettingTab extends PluginSettingTab {
 				await this.plugin.updateSettings({ conversationRoundSeparator: value });
 			},
 		);
+		this.addTextSetting(
+			copy.fields.messageHeadingSummaryLength,
+			String(this.plugin.settings.messageHeadingSummaryLength),
+			async (value) => {
+				await this.plugin.updateSettings({
+					messageHeadingSummaryLength: Number.parseInt(value, 10),
+				});
+			},
+		);
 		this.addSectionHeading(copy.sections.postProcessing);
 		this.addToggleSetting(
 			copy.fields.postProcessingEnabled,

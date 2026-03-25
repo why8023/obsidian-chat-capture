@@ -62,6 +62,12 @@ export function normalizePluginSettings(
 			data?.conversationRoundSeparator,
 			DEFAULT_SETTINGS.conversationRoundSeparator,
 		),
+		messageHeadingSummaryLength: clampInteger(
+			data?.messageHeadingSummaryLength,
+			DEFAULT_SETTINGS.messageHeadingSummaryLength,
+			10,
+			200,
+		),
 		postProcessing: {
 			enabled:
 				data?.postProcessing?.enabled ?? DEFAULT_SETTINGS.postProcessing.enabled,

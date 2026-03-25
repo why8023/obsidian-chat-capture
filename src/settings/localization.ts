@@ -18,6 +18,7 @@ export interface SettingsTabCopy {
 		chatTargets: SettingText;
 		fileNameTemplate: SettingText;
 		conversationRoundSeparator: SettingText;
+		messageHeadingSummaryLength: SettingText;
 		postProcessingEnabled: SettingText;
 		postProcessingCommands: SettingText;
 		postProcessingOpenNote: SettingText;
@@ -80,6 +81,12 @@ const ENGLISH_COPY: SettingsTabCopy = {
 			description:
 				"Inserted before each new USER turn. Use --- for a Markdown horizontal rule. Leave blank to disable it.",
 			placeholder: "---",
+		},
+		messageHeadingSummaryLength: {
+			name: "Message heading summary length",
+			description:
+				"Maximum characters appended after USER / AI in each message heading.",
+			placeholder: "40",
 		},
 		postProcessingEnabled: {
 			name: "Run post-processing commands",
@@ -182,6 +189,11 @@ const CHINESE_COPY: SettingsTabCopy = {
 			description:
 				"在每个新 USER 轮次前插入。使用 --- 可生成 Markdown 水平线，留空则关闭。",
 			placeholder: "---",
+		},
+		messageHeadingSummaryLength: {
+			name: "消息标题摘要长度",
+			description: "每条消息标题里追加在 USER / AI 后面的摘要最大字符数。",
+			placeholder: "40",
 		},
 		postProcessingEnabled: {
 			name: "保存后执行命令",

@@ -138,11 +138,13 @@ export default class ObarPlugin extends Plugin {
 		this.registerEvent(
 			this.app.vault.on("rename", (file, oldPath) => {
 				this.noteIndex.handleVaultRename(file, oldPath);
+				this.sessionIndex.forgetPathTree(oldPath);
 			}),
 		);
 		this.registerEvent(
 			this.app.vault.on("delete", (file) => {
 				this.noteIndex.handleVaultDelete(file);
+				this.sessionIndex.forgetPathTree(file.path);
 			}),
 		);
 		this.registerEvent(

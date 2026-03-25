@@ -73,6 +73,17 @@ export class SessionIndex {
 		return Object.values(this.sessions);
 	}
 
+	forgetPathTree(path: string): void {
+		for (const [key, entry] of Object.entries(this.sessions)) {
+			if (
+				entry.filePath === path ||
+				entry.filePath.startsWith(`${path}/`)
+			) {
+				delete this.sessions[key];
+			}
+		}
+	}
+
 	private findMatchesBySourceUrl(sourceUrl: string): SessionEntryMatch[] {
 		return Object.entries(this.sessions)
 			.filter(([, entry]) => entry.sourceUrl === sourceUrl)

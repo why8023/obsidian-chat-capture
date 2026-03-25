@@ -30,6 +30,10 @@ export class MarkdownWriter {
 		private readonly logger: Logger,
 	) {}
 
+	hasFile(filePath: string): boolean {
+		return this.app.vault.getAbstractFileByPath(filePath) instanceof TFile;
+	}
+
 	async resolveFilePath(
 		snapshot: NormalizedSnapshot,
 		existingPaths: string[],

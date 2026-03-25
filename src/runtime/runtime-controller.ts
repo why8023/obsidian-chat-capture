@@ -501,7 +501,10 @@ export class RuntimeController {
 			}
 			const knownFilePaths = [
 				...this.deps.noteIndex.filePaths(),
-				...this.deps.sessionIndex.entries().map((entry) => entry.filePath),
+				...this.deps.sessionIndex
+					.entries()
+					.map((entry) => entry.filePath)
+					.filter((filePath) => this.deps.markdownWriter.hasFile(filePath)),
 			];
 			const filePath =
 				existingEntry?.filePath ??
@@ -527,6 +530,8 @@ export class RuntimeController {
 				(await this.deps.markdownWriter.needsFrontmatterTimestampRewrite(
 					merge.entry.filePath,
 				));
+			const rewriteMissingFile =
+				!merge.changed && !this.deps.markdownWriter.hasFile(merge.entry.filePath);
 			let persistedEntry =
 				rewriteFrontmatterTimestamps
 					? {
@@ -547,7 +552,7 @@ export class RuntimeController {
 					: merge.entry;
 			let writtenFile: TFile | null = null;
 
-			if (merge.changed || rewriteFrontmatterTimestamps) {
+			if (merge.changed || rewriteFrontmatterTimestamps || rewriteMissingFile) {
 				const previousTitle = existingEntry?.title ?? existingNote?.title;
 				persistedEntry = {
 					...persistedEntry,
@@ -563,8 +568,14 @@ export class RuntimeController {
 					persistedEntry,
 				);
 				this.deps.noteIndex.upsertFromSnapshot(normalized, persistedEntry);
+				if (rewriteMissingFile) {
+					this.deps.logger.info("Conversation note restored after missing file", {
+						conversationKey: normalized.conversationKey,
+						filePath: persistedEntry.filePath,
+					});
+				}
 			}
-			if (merge.changed || merge.replacedKeys.length > 0) {
+			if (merge.changed || merge.replacedKeys.length > 0 || rewriteMissingFile) {
 				await this.deps.sessionIndex.commit(persistedEntry, merge.replacedKeys);
 			}
 			if (merge.changed && writtenFile) {
@@ -581,7 +592,7 @@ export class RuntimeController {
 
 			this.failureCount = 0;
 			this.awaitingStability = false;
-			if (merge.changed) {
+			if (merge.changed || rewriteMissingFile) {
 				const statusMessage = formatObarUiText(
 					`saved ${persistedEntry.lastStableMessageCount} messages`,
 				);

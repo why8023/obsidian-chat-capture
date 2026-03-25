@@ -66,14 +66,14 @@ const ENGLISH_COPY: SettingsTabCopy = {
 	},
 	fields: {
 		chatTargets: {
-			name: "Chat URL rules",
+			name: "AI match rules",
 			description:
 				"Map each URL prefix to its own save folder. The longest matching prefix wins.",
 		},
 		fileNameTemplate: {
 			name: "File name template",
 			description: "Use {{date}}, {{title}}, and {{key}} placeholders.",
-			placeholder: "{{date}} {{title}}",
+			placeholder: "{{date}}_{{title}}",
 		},
 		conversationRoundSeparator: {
 			name: "Conversation separator",
@@ -133,7 +133,7 @@ const ENGLISH_COPY: SettingsTabCopy = {
 		},
 	},
 	chatTargetRule: {
-		namePrefix: "Match rule",
+		namePrefix: "AI match rule",
 		description: "Use one URL prefix and one vault folder for each supported chat site.",
 		urlPlaceholder: "https://chatgpt.com/",
 		saveFolderPlaceholder: "chatgpt",
@@ -169,13 +169,13 @@ const CHINESE_COPY: SettingsTabCopy = {
 	},
 	fields: {
 		chatTargets: {
-			name: "聊天地址规则",
+			name: "AI匹配规则",
 			description: "为每个网址前缀单独配置保存目录。匹配时会优先使用更长的前缀。",
 		},
 		fileNameTemplate: {
 			name: "文件名模板",
 			description: "支持 {{date}}、{{title}} 和 {{key}} 占位符。",
-			placeholder: "{{date}} {{title}}",
+			placeholder: "{{date}}_{{title}}",
 		},
 		conversationRoundSeparator: {
 			name: "对话分隔符",
@@ -231,7 +231,7 @@ const CHINESE_COPY: SettingsTabCopy = {
 		},
 	},
 	chatTargetRule: {
-		namePrefix: "匹配规则",
+		namePrefix: "AI匹配规则",
 		description: "每条规则对应一个聊天网址前缀和一个库内保存目录。",
 		urlPlaceholder: "https://chatgpt.com/",
 		saveFolderPlaceholder: "chatgpt",

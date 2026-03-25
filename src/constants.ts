@@ -16,7 +16,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 			saveFolder: DEFAULT_CHAT_TARGET_SAVE_FOLDER,
 		},
 	],
-	fileNameTemplate: "{{date}} {{title}}",
+	fileNameTemplate: "{{date}}_{{title}}",
 	conversationRoundSeparator: "---",
 	postProcessing: {
 		enabled: false,

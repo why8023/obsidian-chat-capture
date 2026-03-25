@@ -251,7 +251,7 @@
 文件名生成规则在 `src/persistence/file-path.ts`：
 
 - 默认目录：`OBAR Chats`
-- 默认模板：`{{date}} {{title}}`
+- 默认模板：`{{date}}_{{title}}`
 - 支持占位符：
   - `{{date}}`
   - `{{title}}`
@@ -273,28 +273,28 @@ obar_extractor_version: "0.1.0"
 obar_page_state: "conversation"
 ---
 
-# USER
+# USER: 帮我总结一下这个插件的存储逻辑
 ...
 
 ## 用户正文里的一级标题会自动下调
 ...
 
-# AI
+# AI: 这个插件会先把页面里的对话轮次归一化，再写入带 frontmatter 的笔记
 ...
 
 ---
 
-# USER
+# USER: 现在再补一个文件名冲突处理
 ...
 ```
 
-代码块会保留 fenced code block，并尽量保留语言标记。为了让一级标题始终由 `USER / AI` 占用，消息正文里的 Markdown 标题会整体下调一级；每个新一轮 `USER` 开始前还可以插入可配置的分隔符，默认是 `---`。
+代码块会保留 fenced code block，并尽量保留语言标记。每条消息的一级标题会保留 `USER / AI` 前缀，并追加一段从消息内容提取出的单行摘要，方便在大纲里区分不同轮次；摘要会压缩空白、去掉常见的 Markdown 起始标记，并在过长时截断，避免破坏标题语法。消息正文里只有一级标题会下调一级，二级及以下标题保持原样；每个新一轮 `USER` 开始前还可以插入可配置的分隔符，默认是 `---`。
 
 ### 10. 设置与命令
 
 设置项定义在 `src/settings/setting-tab.ts`，当前支持：
 
-- Chat URL
+- AI match rules
 - Save folder
 - File name template
 - Conversation separator

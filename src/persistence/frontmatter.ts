@@ -22,6 +22,7 @@ const LEGACY_CONVERSATION_FRONTMATTER_KEYS = {
 
 const LEGACY_CONVERSATION_SOURCE = "chatgpt-webviewer";
 export const OBAR_CONVERSATION_SOURCE = "obar-chatgpt-webviewer";
+const MESSAGE_HEADING_SUMMARY_MAX_LENGTH = 80;
 
 export const OBAR_CONVERSATION_FRONTMATTER_KEYS = {
 	source: "obar_source",
@@ -100,6 +101,41 @@ function headingForRole(role: ChatMessageRole): string {
 	}
 }
 
+function sanitizeHeadingSummary(value: string): string {
+	return String(value ?? "")
+		.replace(/\r\n/g, "\n")
+		.replace(/[\u200B-\u200D\uFEFF]/g, "")
+		.replace(/\u00A0/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+		.replace(/^#{1,6}\s+/, "")
+		.replace(/^(?:>\s*)+/, "")
+		.replace(/^[-*+]\s+/, "")
+		.replace(/^\d+\.\s+/, "")
+		.replace(/^(`{3,}|~{3,})[^\s]*\s*/i, "")
+		.replace(/\s+#{1,6}$/, "")
+		.replace(/\s*(`{3,}|~{3,})$/, "")
+		.trim();
+}
+
+function truncateHeadingSummary(value: string, maxLength: number): string {
+	if (value.length <= maxLength) {
+		return value;
+	}
+
+	return `${value.slice(0, maxLength).trimEnd()}...`;
+}
+
+function buildMessageHeading(message: NormalizedMessage): string {
+	const roleHeading = headingForRole(message.role);
+	const summary = truncateHeadingSummary(
+		sanitizeHeadingSummary(message.text || message.markdown),
+		MESSAGE_HEADING_SUMMARY_MAX_LENGTH,
+	);
+
+	return summary ? `${roleHeading}: ${summary}` : roleHeading;
+}
+
 function isSetextHeadingUnderline(line: string): boolean {
 	return /^ {0,3}(=+|-+)\s*$/.test(line);
 }
@@ -135,9 +171,11 @@ function shiftMarkdownHeadings(markdown: string, depth: number): string {
 			const nextLine = lines[index + 1];
 			if (nextLine && line.trim() && isSetextHeadingUnderline(nextLine)) {
 				const baseLevel = nextLine.trimStart().startsWith("=") ? 1 : 2;
-				shifted.push(`${"#".repeat(Math.min(6, baseLevel + depth))} ${line.trim()}`);
-				index += 1;
-				continue;
+				if (baseLevel === 1) {
+					shifted.push(`${"#".repeat(Math.min(6, baseLevel + depth))} ${line.trim()}`);
+					index += 1;
+					continue;
+				}
 			}
 
 			const atxMatch = line.match(/^( {0,3})(#{1,6})(\s+|$)(.*)$/);
@@ -146,10 +184,12 @@ function shiftMarkdownHeadings(markdown: string, depth: number): string {
 				const hashes = atxMatch[2] ?? "";
 				const gap = atxMatch[3] ?? "";
 				const content = atxMatch[4] ?? "";
-				shifted.push(
-					`${indent}${"#".repeat(Math.min(6, hashes.length + depth))}${gap}${content}`,
-				);
-				continue;
+				if (hashes.length === 1) {
+					shifted.push(
+						`${indent}${"#".repeat(Math.min(6, hashes.length + depth))}${gap}${content}`,
+					);
+					continue;
+				}
 			}
 		}
 
@@ -195,8 +235,8 @@ export function isSupportedConversationSource(value: string | undefined): boolea
 export function renderMessageMarkdown(message: NormalizedMessage): string {
 	const content = renderMessageContent(message);
 	return content
-		? [`# ${headingForRole(message.role)}`, content].join("\n\n")
-		: `# ${headingForRole(message.role)}`;
+		? [`# ${buildMessageHeading(message)}`, content].join("\n\n")
+		: `# ${buildMessageHeading(message)}`;
 }
 
 export function buildConversationFrontmatter(

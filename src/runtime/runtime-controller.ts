@@ -15,10 +15,13 @@ import { MarkdownWriter } from "../persistence/markdown-writer";
 import { SessionIndex } from "../persistence/session-index";
 import { MarkdownPostProcessor } from "../post-processing/markdown-post-processor";
 import type {
+	CaptureErrorResult,
+	CaptureIdleResult,
 	CaptureRunResult,
 	CaptureDiagnostics,
 	ConversationNoteEntry,
 	ConversationSnapshot,
+	NormalizedSnapshot,
 	PluginSettings,
 	PluginStateData,
 	ScriptExecutionResult,
@@ -65,6 +68,14 @@ interface BootstrapState {
 	diagnostics?: CaptureDiagnostics;
 	health: HealthcheckResult;
 }
+
+type CurrentSnapshotResult =
+	| {
+			status: "ok";
+			snapshot: NormalizedSnapshot;
+	  }
+	| CaptureIdleResult
+	| CaptureErrorResult;
 
 export class RuntimeController {
 	private readonly stateMachine = new RuntimeStateMachine();
@@ -171,6 +182,98 @@ export class RuntimeController {
 
 	async saveSnapshotNow(): Promise<CaptureRunResult> {
 		return this.captureOnce(true);
+	}
+
+	async collectCurrentSnapshot(): Promise<CurrentSnapshotResult> {
+		if (this.isTicking) {
+			return {
+				status: "busy",
+				statusMessage: formatObarUiText("waiting for the current capture cycle"),
+			};
+		}
+
+		this.isTicking = true;
+		let captureStage = "binding";
+		let binding: WebviewBinding | null = null;
+		let diagnostics: CaptureDiagnostics | undefined;
+
+		try {
+			binding = await this.ensureBinding();
+			if (!binding) {
+				const statusMessage = formatObarUiText("no matching Web Viewer found");
+				this.deps.onStatusChange(statusMessage);
+				return {
+					status: "no-matching-viewer",
+					statusMessage,
+				};
+			}
+
+			captureStage = "bootstrap";
+			const bootstrapState = await this.ensureBootstrap(binding, this.forceReinject);
+			diagnostics = bootstrapState.diagnostics;
+
+			captureStage = "collect";
+			const collectResult =
+				await binding.webview.executeJavaScript<
+					ScriptExecutionResult<ConversationSnapshot | null>
+				>(COLLECT_SNAPSHOT_SCRIPT);
+			const rawSnapshot = this.unwrapScriptResult(collectResult);
+			diagnostics = collectResult.diagnostics;
+
+			if (!rawSnapshot) {
+				const statusMessage = formatObarUiText("collect returned no snapshot");
+				this.deps.onStatusChange(statusMessage);
+				return {
+					status: "collect-returned-no-snapshot",
+					statusMessage,
+				};
+			}
+
+			captureStage = "normalize";
+			await this.deps.debugDump.writeSnapshot("last-raw-snapshot", rawSnapshot);
+			const normalized = await this.deps.normalizer.normalize(rawSnapshot);
+			await this.deps.debugDump.writeSnapshot("last-normalized-snapshot", normalized);
+
+			if (normalized.messages.length === 0) {
+				const statusMessage = formatObarUiText("no messages detected");
+				this.deps.onStatusChange(statusMessage);
+				return {
+					status: "no-messages",
+					statusMessage,
+				};
+			}
+
+			return {
+				status: "ok",
+				snapshot: normalized,
+			};
+		} catch (error) {
+			const serializedError = this.serializeError(error);
+			const stage = error instanceof CaptureScriptError ? error.stage : captureStage;
+			this.deps.logger.error("Collecting current snapshot failed", {
+				stage,
+				error: serializedError,
+				binding: binding
+					? {
+							leafId: binding.leafId,
+							url: binding.lastUrl,
+							status: binding.status,
+						}
+					: null,
+				diagnostics:
+					error instanceof CaptureScriptError ? error.diagnostics : diagnostics,
+			});
+			const statusMessage = formatObarUiText("failed");
+			this.deps.onStatusChange(statusMessage);
+			return {
+				status: "error",
+				statusMessage,
+				stage,
+				error: serializedError,
+			};
+		} finally {
+			this.isTicking = false;
+		}
 	}
 
 	private scheduleNextTick(delayMs: number): void {

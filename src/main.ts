@@ -1,4 +1,4 @@
-import { Notice, Plugin } from "obsidian";
+import { Notice, Plugin, TFile } from "obsidian";
 import {
 	DEFAULT_PLUGIN_STATE,
 	DEFAULT_SETTINGS,
@@ -24,6 +24,7 @@ import { CaptureNoticeManager } from "./ui/capture-notice-manager";
 import { MarkdownNoteOpener } from "./ui/markdown-note-opener";
 import type {
 	CaptureRunResult,
+	NormalizedSnapshot,
 	PersistedPluginData,
 	PluginSettings,
 	PluginStateData,
@@ -207,6 +208,49 @@ export default class ObarPlugin extends Plugin {
 		return result;
 	}
 
+	async openCurrentSessionRecord(): Promise<void> {
+		const snapshotResult = await this.runtime.collectCurrentSnapshot();
+		if (snapshotResult.status !== "ok") {
+			new Notice(snapshotResult.statusMessage);
+			return;
+		}
+
+		const existingFile = this.resolveCurrentSessionRecordFile(snapshotResult.snapshot);
+		if (existingFile) {
+			await this.noteOpener.open(existingFile, { focus: true });
+			return;
+		}
+
+		const saveResult = await this.runtime.saveSnapshotNow();
+		if (saveResult.status === "saved") {
+			const savedFile = this.getMarkdownFileByPath(saveResult.filePath);
+			if (savedFile) {
+				await this.noteOpener.open(savedFile, { focus: true });
+				return;
+			}
+
+			new Notice(
+				formatObarUiText(
+					`Saved ${saveResult.filePath} but could not open the note.`,
+				),
+			);
+			return;
+		}
+
+		const resolvedFile = this.resolveCurrentSessionRecordFile(snapshotResult.snapshot);
+		if (saveResult.status === "up-to-date" && resolvedFile) {
+			await this.noteOpener.open(resolvedFile, { focus: true });
+			return;
+		}
+
+		if (saveResult.status === "up-to-date") {
+			new Notice(formatObarUiText("Could not locate the current session record."));
+			return;
+		}
+
+		new Notice(saveResult.statusMessage);
+	}
+
 	async pauseAutoCapture(): Promise<void> {
 		await this.runtime.pause("command");
 		new Notice(formatObarUiText("Auto capture paused."));
@@ -248,6 +292,24 @@ export default class ObarPlugin extends Plugin {
 		const normalized = normalizePersistedData(data);
 		this.settings = normalized.settings;
 		this.state = normalized.state;
+	}
+
+	private resolveCurrentSessionRecordFile(
+		snapshot: NormalizedSnapshot,
+	): TFile | null {
+		return this.getMarkdownFileByPath(
+			this.noteIndex.findMatch(snapshot)?.filePath ??
+				this.sessionIndex.get(snapshot.conversationKey)?.filePath,
+		);
+	}
+
+	private getMarkdownFileByPath(filePath: string | undefined): TFile | null {
+		if (!filePath) {
+			return null;
+		}
+
+		const file = this.app.vault.getAbstractFileByPath(filePath);
+		return file instanceof TFile ? file : null;
 	}
 
 	private async persistPluginData(): Promise<void> {

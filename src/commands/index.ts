@@ -1,5 +1,6 @@
 import type ObarPlugin from "../main";
 import { bindCurrentViewerCommand } from "./bind-current-viewer";
+import { openCurrentSessionRecordCommand } from "./open-current-session-record";
 import { openConfiguredChatViewerCommand } from "./open-chatgpt";
 import { saveNowCommand } from "./save-now";
 
@@ -21,10 +22,18 @@ export function registerCommands(plugin: ObarPlugin): void {
 	});
 
 	plugin.addCommand({
-		id: "save-current-snapshot",
-		name: "Save current snapshot",
+		id: "save-current-session",
+		name: "Save current session",
 		callback: () => {
 			void saveNowCommand(plugin);
+		},
+	});
+
+	plugin.addCommand({
+		id: "open-current-session-record",
+		name: "Open current session record",
+		callback: () => {
+			void openCurrentSessionRecordCommand(plugin);
 		},
 	});
 

@@ -311,13 +311,13 @@ obar_page_state: "conversation"
 
 - `Open web viewer`
 - `Bind current web viewer`
-- `Save current snapshot`
+- `Save current session`
 - `Pause auto capture`
 - `Resume auto capture`
 
 其中：
 
-- `Save current snapshot` 会强制执行一次采集并直接进入保存流程
+- `Save current session` 会强制执行一次采集并直接进入保存流程
 
 ### 11. 调试与诊断
 

@@ -1,3 +1,4 @@
+import { type TFile } from "obsidian";
 import {
 	COLLECT_SNAPSHOT_SCRIPT,
 	createBootstrapScript,
@@ -12,6 +13,7 @@ import { Logger } from "../debug/logger";
 import { ConversationNoteIndex } from "../persistence/conversation-note-index";
 import { MarkdownWriter } from "../persistence/markdown-writer";
 import { SessionIndex } from "../persistence/session-index";
+import { MarkdownPostProcessor } from "../post-processing/markdown-post-processor";
 import type {
 	CaptureRunResult,
 	CaptureDiagnostics,
@@ -48,6 +50,7 @@ interface RuntimeControllerDeps {
 	noteIndex: ConversationNoteIndex;
 	sessionIndex: SessionIndex;
 	markdownWriter: MarkdownWriter;
+	postProcessor: MarkdownPostProcessor;
 	normalizer: SnapshotNormalizer;
 	debugDump: DebugDumpWriter;
 	logger: Logger;
@@ -427,13 +430,20 @@ export class RuntimeController {
 								merge.entry.lastStableMessageCount,
 						}
 					: merge.entry;
+			let writtenFile: TFile | null = null;
 
 			if (merge.changed || rewriteFrontmatterTimestamps) {
-				await this.deps.markdownWriter.writeSnapshot(normalized, persistedEntry);
+				writtenFile = await this.deps.markdownWriter.writeSnapshot(
+					normalized,
+					persistedEntry,
+				);
 				this.deps.noteIndex.upsertFromSnapshot(normalized, persistedEntry);
 			}
 			if (merge.changed || merge.replacedKeys.length > 0) {
 				await this.deps.sessionIndex.commit(merge.entry, merge.replacedKeys);
+			}
+			if (merge.changed && writtenFile) {
+				await this.deps.postProcessor.run(writtenFile);
 			}
 
 			this.failureCount = 0;

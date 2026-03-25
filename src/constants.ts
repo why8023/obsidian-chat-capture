@@ -18,6 +18,11 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	],
 	fileNameTemplate: "{{date}} {{title}}",
 	conversationRoundSeparator: "---",
+	postProcessing: {
+		enabled: false,
+		commandIds: [],
+		openNote: true,
+	},
 	pollIntervalMs: 1500,
 	settleRepeatCount: 2,
 	settleTimeoutMs: 3000,

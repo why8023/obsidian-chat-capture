@@ -37,6 +37,14 @@ function normalizeConversationRoundSeparator(
 	return input.trim();
 }
 
+function normalizeCommandIds(input: string[] | undefined): string[] {
+	if (!Array.isArray(input)) {
+		return [];
+	}
+
+	return [...new Set(input.map((value) => value.trim()).filter(Boolean))];
+}
+
 export function normalizePluginSettings(
 	data?: PersistedPluginSettingsData,
 ): PluginSettings {
@@ -54,6 +62,13 @@ export function normalizePluginSettings(
 			data?.conversationRoundSeparator,
 			DEFAULT_SETTINGS.conversationRoundSeparator,
 		),
+		postProcessing: {
+			enabled:
+				data?.postProcessing?.enabled ?? DEFAULT_SETTINGS.postProcessing.enabled,
+			commandIds: normalizeCommandIds(data?.postProcessing?.commandIds),
+			openNote:
+				data?.postProcessing?.openNote ?? DEFAULT_SETTINGS.postProcessing.openNote,
+		},
 		pollIntervalMs: clampInteger(
 			data?.pollIntervalMs,
 			DEFAULT_SETTINGS.pollIntervalMs,

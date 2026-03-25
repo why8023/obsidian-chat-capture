@@ -7,3 +7,19 @@ body .obar-chat-target-folder-input {
 	width: 12rem;
 	max-width: 100%;
 }
+
+body .obar-post-processing-empty {
+	margin: -0.25rem 0 0.75rem;
+	padding-left: 1.25rem;
+	color: var(--text-muted);
+}
+
+body .obar-command-suggestion-name {
+	font-weight: var(--font-medium);
+}
+
+body .obar-command-suggestion-id {
+	margin-top: 0.125rem;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}

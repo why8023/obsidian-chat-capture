@@ -12,6 +12,7 @@ import { Logger } from "./debug/logger";
 import { ConversationNoteIndex } from "./persistence/conversation-note-index";
 import { MarkdownWriter } from "./persistence/markdown-writer";
 import { SessionIndex } from "./persistence/session-index";
+import { MarkdownPostProcessor } from "./post-processing/markdown-post-processor";
 import { RuntimeController } from "./runtime/runtime-controller";
 import {
 	getPrimaryChatTarget,
@@ -36,6 +37,7 @@ export default class ObarPlugin extends Plugin {
 	noteIndex!: ConversationNoteIndex;
 	sessionIndex!: SessionIndex;
 	markdownWriter!: MarkdownWriter;
+	postProcessor!: MarkdownPostProcessor;
 	viewerManager!: ViewerManager;
 	runtime!: RuntimeController;
 	captureNotices!: CaptureNoticeManager;
@@ -63,6 +65,11 @@ export default class ObarPlugin extends Plugin {
 			() => this.settings,
 			this.logger,
 		);
+		this.postProcessor = new MarkdownPostProcessor(
+			this.app,
+			() => this.settings,
+			this.logger,
+		);
 		this.captureNotices = new CaptureNoticeManager();
 		this.viewerManager = new ViewerManager(
 			this.app,
@@ -77,6 +84,7 @@ export default class ObarPlugin extends Plugin {
 			noteIndex: this.noteIndex,
 			sessionIndex: this.sessionIndex,
 			markdownWriter: this.markdownWriter,
+			postProcessor: this.postProcessor,
 			normalizer: new SnapshotNormalizer(),
 			debugDump: this.debugDump,
 			logger: this.logger,

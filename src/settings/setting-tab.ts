@@ -1,6 +1,8 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
+import { getObsidianCommand } from "../commands/command-registry";
 import type ObarPlugin from "../main";
 import type { ChatTargetRule } from "../types";
+import { CommandPickerModal } from "./command-picker-modal";
 import { getSettingsTabCopy, type SettingsTabCopy } from "./localization";
 
 export class ObarSettingTab extends PluginSettingTab {
@@ -29,6 +31,32 @@ export class ObarSettingTab extends PluginSettingTab {
 			this.plugin.settings.conversationRoundSeparator,
 			async (value) => {
 				await this.plugin.updateSettings({ conversationRoundSeparator: value });
+			},
+		);
+		this.addSectionHeading(copy.sections.postProcessing);
+		this.addToggleSetting(
+			copy.fields.postProcessingEnabled,
+			this.plugin.settings.postProcessing.enabled,
+			async (value) => {
+				await this.plugin.updateSettings({
+					postProcessing: {
+						...this.plugin.settings.postProcessing,
+						enabled: value,
+					},
+				});
+			},
+		);
+		this.addPostProcessingCommandSettings(copy);
+		this.addToggleSetting(
+			copy.fields.postProcessingOpenNote,
+			this.plugin.settings.postProcessing.openNote,
+			async (value) => {
+				await this.plugin.updateSettings({
+					postProcessing: {
+						...this.plugin.settings.postProcessing,
+						openNote: value,
+					},
+				});
 			},
 		);
 
@@ -126,6 +154,62 @@ export class ObarSettingTab extends PluginSettingTab {
 			.addToggle((toggle) => toggle.setValue(value).onChange(onChange));
 	}
 
+	private addPostProcessingCommandSettings(copy: SettingsTabCopy): void {
+		new Setting(this.containerEl)
+			.setName(copy.fields.postProcessingCommands.name)
+			.setDesc(copy.fields.postProcessingCommands.description)
+			.addButton((button) =>
+				button
+					.setButtonText(copy.actions.addPostProcessingCommand)
+					.onClick(() => {
+						this.openPostProcessingCommandPicker();
+					}),
+			);
+
+		const commandIds = this.plugin.settings.postProcessing.commandIds;
+		if (commandIds.length === 0) {
+			this.containerEl.createDiv({
+				cls: "obar-post-processing-empty setting-item-description",
+				text: copy.postProcessingList.empty,
+			});
+			return;
+		}
+
+		commandIds.forEach((commandId, index) => {
+			const command = getObsidianCommand(this.app, commandId);
+			const description = command
+				? command.id
+				: `${commandId} (${copy.postProcessingList.missingDescription})`;
+			const setting = new Setting(this.containerEl)
+				.setName(command?.name ?? copy.postProcessingList.missingName)
+				.setDesc(description);
+
+			setting.addButton((button) =>
+				button
+					.setButtonText(copy.actions.moveCommandUp)
+					.setDisabled(index === 0)
+					.onClick(() => {
+						void this.movePostProcessingCommand(index, -1);
+					}),
+			);
+			setting.addButton((button) =>
+				button
+					.setButtonText(copy.actions.moveCommandDown)
+					.setDisabled(index === commandIds.length - 1)
+					.onClick(() => {
+						void this.movePostProcessingCommand(index, 1);
+					}),
+			);
+			setting.addButton((button) =>
+				button
+					.setButtonText(copy.actions.removePostProcessingCommand)
+					.onClick(() => {
+						void this.removePostProcessingCommand(index);
+					}),
+			);
+		});
+	}
+
 	private addChatTargetSettings(copy: SettingsTabCopy): void {
 		new Setting(this.containerEl)
 			.setName(copy.fields.chatTargets.name)
@@ -193,5 +277,63 @@ export class ObarSettingTab extends PluginSettingTab {
 				candidateIndex === index ? { ...rule, ...patch } : rule,
 			),
 		});
+	}
+
+	private openPostProcessingCommandPicker(): void {
+		new CommandPickerModal(this.app, {
+			excludedCommandIds: this.plugin.settings.postProcessing.commandIds,
+			onChoose: (command) => {
+				void this.appendPostProcessingCommand(command.id);
+			},
+		}).open();
+	}
+
+	private async appendPostProcessingCommand(commandId: string): Promise<void> {
+		await this.plugin.updateSettings({
+			postProcessing: {
+				...this.plugin.settings.postProcessing,
+				commandIds: [...this.plugin.settings.postProcessing.commandIds, commandId],
+			},
+		});
+		this.display();
+	}
+
+	private async removePostProcessingCommand(index: number): Promise<void> {
+		await this.plugin.updateSettings({
+			postProcessing: {
+				...this.plugin.settings.postProcessing,
+				commandIds: this.plugin.settings.postProcessing.commandIds.filter(
+					(_, candidateIndex) => candidateIndex !== index,
+				),
+			},
+		});
+		this.display();
+	}
+
+	private async movePostProcessingCommand(
+		index: number,
+		offset: -1 | 1,
+	): Promise<void> {
+		const commandIds = [...this.plugin.settings.postProcessing.commandIds];
+		const targetIndex = index + offset;
+		if (targetIndex < 0 || targetIndex >= commandIds.length) {
+			return;
+		}
+
+		const currentCommandId = commandIds[index];
+		const targetCommandId = commandIds[targetIndex];
+		if (!currentCommandId || !targetCommandId) {
+			return;
+		}
+
+		commandIds[index] = targetCommandId;
+		commandIds[targetIndex] = currentCommandId;
+		await this.plugin.updateSettings({
+			postProcessing: {
+				...this.plugin.settings.postProcessing,
+				commandIds,
+			},
+		});
+		this.display();
 	}
 }

@@ -10,6 +10,7 @@ export interface SettingsTabCopy {
 	sections: {
 		general: string;
 		output: string;
+		postProcessing: string;
 		capture: string;
 		debug: string;
 	};
@@ -17,6 +18,9 @@ export interface SettingsTabCopy {
 		chatTargets: SettingText;
 		fileNameTemplate: SettingText;
 		conversationRoundSeparator: SettingText;
+		postProcessingEnabled: SettingText;
+		postProcessingCommands: SettingText;
+		postProcessingOpenNote: SettingText;
 		pollIntervalMs: SettingText;
 		settleRepeatCount: SettingText;
 		settleTimeoutMs: SettingText;
@@ -34,6 +38,21 @@ export interface SettingsTabCopy {
 	actions: {
 		addChatTarget: string;
 		removeChatTarget: string;
+		addPostProcessingCommand: string;
+		removePostProcessingCommand: string;
+		moveCommandUp: string;
+		moveCommandDown: string;
+	};
+	postProcessingList: {
+		empty: string;
+		missingName: string;
+		missingDescription: string;
+	};
+	commandPicker: {
+		placeholder: string;
+		empty: string;
+		chooseHint: string;
+		dismissHint: string;
 	};
 }
 
@@ -41,6 +60,7 @@ const ENGLISH_COPY: SettingsTabCopy = {
 	sections: {
 		general: "General",
 		output: "Output format",
+		postProcessing: "Post-save processing",
 		capture: "Automatic capture",
 		debug: "Debug and diagnostics",
 	},
@@ -60,6 +80,21 @@ const ENGLISH_COPY: SettingsTabCopy = {
 			description:
 				"Inserted before each new USER turn. Use --- for a Markdown horizontal rule. Leave blank to disable it.",
 			placeholder: "---",
+		},
+		postProcessingEnabled: {
+			name: "Run post-processing commands",
+			description:
+				"After a note is updated, run Obsidian command IDs from this list in order.",
+		},
+		postProcessingCommands: {
+			name: "Post-processing commands",
+			description:
+				"Choose commands from Obsidian's registered command list. They run from top to bottom.",
+		},
+		postProcessingOpenNote: {
+			name: "Open generated note before running",
+			description:
+				"Recommended when commands operate on the active note or editor. This may switch the visible tab.",
 		},
 		pollIntervalMs: {
 			name: "Poll interval",
@@ -106,6 +141,21 @@ const ENGLISH_COPY: SettingsTabCopy = {
 	actions: {
 		addChatTarget: "Add rule",
 		removeChatTarget: "Remove rule",
+		addPostProcessingCommand: "Add command",
+		removePostProcessingCommand: "Remove",
+		moveCommandUp: "Up",
+		moveCommandDown: "Down",
+	},
+	postProcessingList: {
+		empty: "No post-processing commands selected.",
+		missingName: "Missing command",
+		missingDescription: "This command is not currently available in Obsidian.",
+	},
+	commandPicker: {
+		placeholder: "Search commands",
+		empty: "No available commands found.",
+		chooseHint: "Choose command",
+		dismissHint: "Close",
 	},
 };
 
@@ -113,6 +163,7 @@ const CHINESE_COPY: SettingsTabCopy = {
 	sections: {
 		general: "常规",
 		output: "导出格式",
+		postProcessing: "保存后处理",
 		capture: "自动采集",
 		debug: "调试与诊断",
 	},
@@ -131,6 +182,20 @@ const CHINESE_COPY: SettingsTabCopy = {
 			description:
 				"在每个新 USER 轮次前插入。使用 --- 可生成 Markdown 水平线，留空则关闭。",
 			placeholder: "---",
+		},
+		postProcessingEnabled: {
+			name: "保存后执行命令",
+			description: "笔记内容更新后，按顺序执行下面配置的 Obsidian 命令 ID。",
+		},
+		postProcessingCommands: {
+			name: "后处理命令",
+			description:
+				"从 Obsidian 已注册的命令列表里选择。执行时会按从上到下的顺序运行。",
+		},
+		postProcessingOpenNote: {
+			name: "执行前打开生成的笔记",
+			description:
+				"如果命令依赖当前活动笔记或编辑器，建议开启。开启后可能会切换到该标签页。",
 		},
 		pollIntervalMs: {
 			name: "轮询间隔",
@@ -174,6 +239,21 @@ const CHINESE_COPY: SettingsTabCopy = {
 	actions: {
 		addChatTarget: "新增规则",
 		removeChatTarget: "删除规则",
+		addPostProcessingCommand: "添加命令",
+		removePostProcessingCommand: "删除",
+		moveCommandUp: "上移",
+		moveCommandDown: "下移",
+	},
+	postProcessingList: {
+		empty: "当前还没有选择任何后处理命令。",
+		missingName: "命令不可用",
+		missingDescription: "这个命令当前没有在 Obsidian 中注册。",
+	},
+	commandPicker: {
+		placeholder: "搜索命令",
+		empty: "没有可选命令。",
+		chooseHint: "选择命令",
+		dismissHint: "关闭",
 	},
 };
 

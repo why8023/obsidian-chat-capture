@@ -23,10 +23,17 @@ export interface ChatTargetRule {
 	saveFolder: string;
 }
 
+export interface PostProcessingSettings {
+	enabled: boolean;
+	commandIds: string[];
+	openNote: boolean;
+}
+
 export interface PluginSettings {
 	chatTargets: ChatTargetRule[];
 	fileNameTemplate: string;
 	conversationRoundSeparator: string;
+	postProcessing: PostProcessingSettings;
 	pollIntervalMs: number;
 	settleRepeatCount: number;
 	settleTimeoutMs: number;

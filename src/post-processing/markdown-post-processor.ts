@@ -1,4 +1,4 @@
-import { App, Notice, TFile, type WorkspaceLeaf } from "obsidian";
+import { App, Notice, TFile } from "obsidian";
 import {
 	getCommandManager,
 	getObsidianCommand,
@@ -7,29 +7,25 @@ import {
 import { formatObarUiText } from "../constants";
 import { Logger } from "../debug/logger";
 import type { PluginSettings } from "../types";
-
-function sleep(delayMs: number): Promise<void> {
-	return new Promise((resolve) => {
-		window.setTimeout(resolve, delayMs);
-	});
-}
+import { MarkdownNoteOpener } from "../ui/markdown-note-opener";
 
 export class MarkdownPostProcessor {
-	private commandLeaf: WorkspaceLeaf | null = null;
 	private lastWarningKey: string | null = null;
 
 	constructor(
 		private readonly app: App,
 		private readonly getSettings: () => PluginSettings,
 		private readonly logger: Logger,
+		private readonly noteOpener: MarkdownNoteOpener,
 	) {}
 
-	async run(file: TFile): Promise<void> {
+	async run(file: TFile): Promise<boolean> {
 		const settings = this.getSettings().postProcessing;
 		if (!settings.enabled || settings.commandIds.length === 0) {
-			return;
+			return false;
 		}
 
+		let noteOpened = false;
 		try {
 			const manager = this.getCommandManager();
 			if (!manager?.executeCommandById) {
@@ -40,11 +36,12 @@ export class MarkdownPostProcessor {
 					"command-manager-unavailable",
 					"Post-processing is unavailable because Obsidian commands could not be accessed.",
 				);
-				return;
+				return false;
 			}
 
 			if (settings.openNote) {
 				await this.prepareFileForCommands(file);
+				noteOpened = true;
 			}
 
 			let allSucceeded = true;
@@ -66,6 +63,8 @@ export class MarkdownPostProcessor {
 				`Post-processing failed for ${file.path}. Check the console for details.`,
 			);
 		}
+
+		return noteOpened;
 	}
 
 	private async runCommand(
@@ -119,24 +118,7 @@ export class MarkdownPostProcessor {
 	}
 
 	private async prepareFileForCommands(file: TFile): Promise<void> {
-		const leaf = this.getOrCreateCommandLeaf();
-		await leaf.openFile(file, { active: true });
-		await this.app.workspace.revealLeaf(leaf);
-		this.app.workspace.setActiveLeaf(leaf, { focus: false });
-		await sleep(75);
-	}
-
-	private getOrCreateCommandLeaf(): WorkspaceLeaf {
-		if (this.commandLeaf && this.isReusableCommandLeaf(this.commandLeaf)) {
-			return this.commandLeaf;
-		}
-
-		this.commandLeaf = this.app.workspace.getLeaf("tab");
-		return this.commandLeaf;
-	}
-
-	private isReusableCommandLeaf(leaf: WorkspaceLeaf): boolean {
-		return this.app.workspace.getLeavesOfType("markdown").includes(leaf);
+		await this.noteOpener.open(file);
 	}
 
 	private getCommandManager(): CommandManagerLike | undefined {

@@ -44,6 +44,13 @@ export class ObarSettingTab extends PluginSettingTab {
 		);
 		this.addSectionHeading(copy.sections.postProcessing);
 		this.addToggleSetting(
+			copy.fields.openNoteAfterSave,
+			this.plugin.settings.openNoteAfterSave,
+			async (value) => {
+				await this.plugin.updateSettings({ openNoteAfterSave: value });
+			},
+		);
+		this.addToggleSetting(
 			copy.fields.postProcessingEnabled,
 			this.plugin.settings.postProcessing.enabled,
 			async (value) => {

@@ -35,6 +35,7 @@ export interface PluginSettings {
 	conversationRoundSeparator: string;
 	messageHeadingSummaryLength: number;
 	postProcessing: PostProcessingSettings;
+	openNoteAfterSave: boolean;
 	pollIntervalMs: number;
 	settleRepeatCount: number;
 	settleTimeoutMs: number;

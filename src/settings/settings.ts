@@ -75,6 +75,8 @@ export function normalizePluginSettings(
 			openNote:
 				data?.postProcessing?.openNote ?? DEFAULT_SETTINGS.postProcessing.openNote,
 		},
+		openNoteAfterSave:
+			data?.openNoteAfterSave ?? DEFAULT_SETTINGS.openNoteAfterSave,
 		pollIntervalMs: clampInteger(
 			data?.pollIntervalMs,
 			DEFAULT_SETTINGS.pollIntervalMs,

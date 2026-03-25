@@ -53,6 +53,7 @@ interface RuntimeControllerDeps {
 	sessionIndex: SessionIndex;
 	markdownWriter: MarkdownWriter;
 	postProcessor: MarkdownPostProcessor;
+	openNote: (file: TFile) => Promise<void>;
 	normalizer: SnapshotNormalizer;
 	debugDump: DebugDumpWriter;
 	logger: Logger;
@@ -464,7 +465,15 @@ export class RuntimeController {
 				await this.deps.sessionIndex.commit(persistedEntry, merge.replacedKeys);
 			}
 			if (merge.changed && writtenFile) {
-				await this.deps.postProcessor.run(writtenFile);
+				const noteOpenedByPostProcessor = await this.deps.postProcessor.run(
+					writtenFile,
+				);
+				if (
+					this.deps.settings().openNoteAfterSave &&
+					!noteOpenedByPostProcessor
+				) {
+					await this.deps.openNote(writtenFile);
+				}
 			}
 
 			this.failureCount = 0;

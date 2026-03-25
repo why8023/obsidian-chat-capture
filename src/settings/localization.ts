@@ -19,6 +19,7 @@ export interface SettingsTabCopy {
 		fileNameTemplate: SettingText;
 		conversationRoundSeparator: SettingText;
 		messageHeadingSummaryLength: SettingText;
+		openNoteAfterSave: SettingText;
 		postProcessingEnabled: SettingText;
 		postProcessingCommands: SettingText;
 		postProcessingOpenNote: SettingText;
@@ -87,6 +88,11 @@ const ENGLISH_COPY: SettingsTabCopy = {
 			description:
 				"Maximum characters appended after USER / AI in each message heading.",
 			placeholder: "40",
+		},
+		openNoteAfterSave: {
+			name: "Open note after save",
+			description:
+				"After a note is created or updated, open it in a Markdown tab. This may switch the visible tab.",
 		},
 		postProcessingEnabled: {
 			name: "Run post-processing commands",
@@ -194,6 +200,11 @@ const CHINESE_COPY: SettingsTabCopy = {
 			name: "消息标题摘要长度",
 			description: "每条消息标题里追加在 USER / AI 后面的摘要最大字符数。",
 			placeholder: "40",
+		},
+		openNoteAfterSave: {
+			name: "保存后自动打开笔记",
+			description:
+				"创建或更新笔记后，自动在 Markdown 标签页中打开。开启后可能会切换到该标签页。",
 		},
 		postProcessingEnabled: {
 			name: "保存后执行命令",

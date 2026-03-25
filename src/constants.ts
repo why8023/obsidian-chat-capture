@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 		commandIds: [],
 		openNote: true,
 	},
+	openNoteAfterSave: false,
 	pollIntervalMs: 1500,
 	settleRepeatCount: 2,
 	settleTimeoutMs: 3000,

@@ -21,6 +21,7 @@ import {
 import { normalizePersistedData, normalizePluginSettings } from "./settings/settings";
 import { ObarSettingTab } from "./settings/setting-tab";
 import { CaptureNoticeManager } from "./ui/capture-notice-manager";
+import { MarkdownNoteOpener } from "./ui/markdown-note-opener";
 import type {
 	CaptureRunResult,
 	PersistedPluginData,
@@ -38,6 +39,7 @@ export default class ObarPlugin extends Plugin {
 	sessionIndex!: SessionIndex;
 	markdownWriter!: MarkdownWriter;
 	postProcessor!: MarkdownPostProcessor;
+	noteOpener!: MarkdownNoteOpener;
 	viewerManager!: ViewerManager;
 	runtime!: RuntimeController;
 	captureNotices!: CaptureNoticeManager;
@@ -65,10 +67,12 @@ export default class ObarPlugin extends Plugin {
 			() => this.settings,
 			this.logger,
 		);
+		this.noteOpener = new MarkdownNoteOpener(this.app);
 		this.postProcessor = new MarkdownPostProcessor(
 			this.app,
 			() => this.settings,
 			this.logger,
+			this.noteOpener,
 		);
 		this.captureNotices = new CaptureNoticeManager();
 		this.viewerManager = new ViewerManager(
@@ -85,6 +89,7 @@ export default class ObarPlugin extends Plugin {
 			sessionIndex: this.sessionIndex,
 			markdownWriter: this.markdownWriter,
 			postProcessor: this.postProcessor,
+			openNote: (file) => this.noteOpener.open(file),
 			normalizer: new SnapshotNormalizer(),
 			debugDump: this.debugDump,
 			logger: this.logger,

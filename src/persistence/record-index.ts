@@ -79,7 +79,7 @@ function compareEntries(left: RecordEntry, right: RecordEntry): number {
 	return left.filePath.localeCompare(right.filePath);
 }
 
-type SessionIdentityField = "sessionId" | "sessionKey" | "provisionalSessionKey";
+type SessionIdentityField = "sessionId" | "sessionKey";
 
 interface IdentityIndex {
 	groups: Map<string, Set<string>>;
@@ -91,7 +91,6 @@ interface IdentityIndex {
 const IDENTITY_FIELDS: readonly SessionIdentityField[] = [
 	"sessionId",
 	"sessionKey",
-	"provisionalSessionKey",
 ];
 
 function createIdentityIndex(
@@ -111,10 +110,6 @@ export class RecordIndex {
 	private readonly identityIndexes: Record<SessionIdentityField, IdentityIndex> = {
 		sessionId: createIdentityIndex(),
 		sessionKey: createIdentityIndex(),
-		provisionalSessionKey: createIdentityIndex({
-			requireUnique: true,
-			warnOnDuplicate: false,
-		}),
 	};
 
 	constructor(
@@ -164,13 +159,6 @@ export class RecordIndex {
 			return bySessionKey;
 		}
 
-		if (snapshot.provisionalSessionKey) {
-			return this.getIdentityWinner(
-				"provisionalSessionKey",
-				snapshot.provisionalSessionKey,
-			);
-		}
-
 		return undefined;
 	}
 
@@ -197,7 +185,6 @@ export class RecordIndex {
 			filePath: entry.filePath,
 			sessionId: snapshot.sessionId,
 			sessionKey: snapshot.sessionKey,
-			provisionalSessionKey: snapshot.provisionalSessionKey,
 			sessionUrl: snapshot.pageUrl,
 			sessionTitle: snapshot.sessionTitle,
 			createdAt: entry.createdAt,
@@ -349,9 +336,6 @@ export class RecordIndex {
 			filePath: file.path,
 			sessionId,
 			sessionKey,
-			provisionalSessionKey: normalizeString(
-				readRecordFrontmatterEntry(frontmatter, "provisionalSessionKey"),
-			),
 			sessionUrl,
 			sessionTitle:
 				normalizeString(readRecordFrontmatterEntry(frontmatter, "sessionTitle")) ??

@@ -401,12 +401,7 @@ export class RuntimeController {
 				});
 			}
 
-			if (
-				!forcePersist &&
-				!this.hasStableSessionIdentity(normalized) &&
-				!this.deps.recordIndex.findMatch(normalized) &&
-				!this.deps.sessionIndex.findMatch(normalized)
-			) {
+			if (!normalized.sessionId) {
 				nextDelay = Math.min(this.deps.settings().pollIntervalMs, 1_000);
 				const statusMessage = formatObarUiText("waiting for session id");
 				this.deps.onStatusChange(statusMessage);
@@ -598,6 +593,15 @@ export class RuntimeController {
 	private async persistSnapshot(
 		normalized: NormalizedSessionSnapshot,
 	): Promise<CaptureRunResult> {
+		if (!normalized.sessionId) {
+			const statusMessage = formatObarUiText("waiting for session id");
+			this.deps.onStatusChange(statusMessage);
+			return {
+				status: "waiting-for-session-id",
+				statusMessage,
+			};
+		}
+
 		this.setRuntimeState("saving");
 		const existingRecord = this.deps.recordIndex.findMatch(normalized);
 		const existingEntry = this.reconcileSessionEntryWithRecord(
@@ -897,8 +901,6 @@ export class RuntimeController {
 		return {
 			...entry,
 			filePath: record.filePath || entry.filePath,
-			provisionalSessionKey:
-				record.provisionalSessionKey ?? entry.provisionalSessionKey,
 			sessionUrl: record.sessionUrl ?? entry.sessionUrl,
 			sessionTitle: record.sessionTitle ?? entry.sessionTitle,
 		};

@@ -22,7 +22,6 @@ export const OBAR_RECORD_FRONTMATTER_KEYS = {
 	extractorVersion: "obar_extractor_version",
 	pageState: "obar_session_state",
 	sessionId: "obar_session_id",
-	provisionalSessionKey: "obar_provisional_session_key",
 } as const;
 
 type RecordFrontmatterField = keyof typeof OBAR_RECORD_FRONTMATTER_KEYS;
@@ -138,10 +137,6 @@ export function buildRecordFrontmatter(
 
 	if (snapshot.sessionId) {
 		frontmatter[getRecordFrontmatterKey("sessionId")] = snapshot.sessionId;
-	}
-	if (snapshot.provisionalSessionKey) {
-		frontmatter[getRecordFrontmatterKey("provisionalSessionKey")] =
-			snapshot.provisionalSessionKey;
 	}
 
 	return frontmatter;

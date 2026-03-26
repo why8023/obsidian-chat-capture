@@ -90,7 +90,6 @@ export interface NormalizedSessionSnapshot {
 	extractorVersion: string;
 	sessionId?: string;
 	sessionKey: string;
-	provisionalSessionKey?: string;
 	sessionTitle: string;
 	pageUrl: string;
 	pageTitle: string;
@@ -109,7 +108,6 @@ export interface SessionMessageIndex {
 
 export interface SessionIndexEntry {
 	sessionKey: string;
-	provisionalSessionKey?: string;
 	filePath: string;
 	sessionUrl: string;
 	sessionTitle?: string;
@@ -124,7 +122,6 @@ export interface RecordEntry {
 	filePath: string;
 	sessionId?: string;
 	sessionKey?: string;
-	provisionalSessionKey?: string;
 	sessionUrl?: string;
 	sessionTitle?: string;
 	createdAt?: number;

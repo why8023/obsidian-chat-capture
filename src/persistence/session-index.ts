@@ -69,24 +69,8 @@ export class SessionIndex {
 		return this.sessions[sessionKey];
 	}
 
-	findMatch(snapshot: Pick<NormalizedSessionSnapshot, "sessionKey" | "provisionalSessionKey">): SessionIndexEntry | undefined {
-		const exactMatch = this.sessions[snapshot.sessionKey];
-		if (exactMatch) {
-			return exactMatch;
-		}
-
-		if (!snapshot.provisionalSessionKey) {
-			return undefined;
-		}
-
-		const provisionalMatches = this.findMatchesByProvisionalSessionKey(
-			snapshot.provisionalSessionKey,
-		);
-		if (provisionalMatches.length !== 1) {
-			return undefined;
-		}
-
-		return provisionalMatches[0]?.entry;
+	findMatch(snapshot: Pick<NormalizedSessionSnapshot, "sessionKey">): SessionIndexEntry | undefined {
+		return this.sessions[snapshot.sessionKey];
 	}
 
 	entries(): SessionIndexEntry[] {
@@ -118,17 +102,6 @@ export class SessionIndex {
 			.sort(compareSessionMatches);
 	}
 
-	private findMatchesByProvisionalSessionKey(
-		provisionalSessionKey: string,
-	): SessionEntryMatch[] {
-		return Object.entries(this.sessions)
-			.filter(
-				([, entry]) => entry.provisionalSessionKey === provisionalSessionKey,
-			)
-			.map(([key, entry]) => ({ key, entry }))
-			.sort(compareSessionMatches);
-	}
-
 	private createEntryFromRecord(
 		record: RecordEntry,
 		snapshot: NormalizedSessionSnapshot,
@@ -136,8 +109,6 @@ export class SessionIndex {
 	): SessionIndexEntry {
 		return {
 			sessionKey: snapshot.sessionKey,
-			provisionalSessionKey:
-				record.provisionalSessionKey ?? snapshot.provisionalSessionKey,
 			filePath: record.filePath || filePath,
 			sessionUrl: record.sessionUrl ?? snapshot.pageUrl,
 			sessionTitle: record.sessionTitle ?? snapshot.sessionTitle,
@@ -157,14 +128,9 @@ export class SessionIndex {
 		const exactMatch = this.sessions[snapshot.sessionKey];
 		const filePathMatches = this.findMatchesByFilePath(filePath);
 		const sessionUrlMatches = this.findMatchesBySessionUrl(snapshot.pageUrl);
-		const provisionalMatches = snapshot.provisionalSessionKey
-			? this.findMatchesByProvisionalSessionKey(snapshot.provisionalSessionKey)
-			: [];
-		const provisionalMatch =
-			provisionalMatches.length === 1 ? provisionalMatches[0] : undefined;
 		const existingMatch = exactMatch
 			? { key: snapshot.sessionKey, entry: exactMatch }
-			: provisionalMatch ?? filePathMatches[0] ?? sessionUrlMatches[0];
+			: filePathMatches[0] ?? sessionUrlMatches[0];
 		const existing =
 			existingMatch?.entry ??
 			(existingRecord
@@ -173,14 +139,12 @@ export class SessionIndex {
 		const replacedKeys = [
 			...filePathMatches,
 			...sessionUrlMatches,
-			...provisionalMatches,
 		]
 			.map((match) => match.key)
 			.filter((key) => key !== snapshot.sessionKey)
 			.filter((key, index, keys) => keys.indexOf(key) === index);
 		const nextEntry: SessionIndexEntry = {
 			sessionKey: snapshot.sessionKey,
-			provisionalSessionKey: snapshot.provisionalSessionKey,
 			filePath: existing?.filePath ?? filePath,
 			sessionUrl: snapshot.pageUrl,
 			sessionTitle: snapshot.sessionTitle,
@@ -205,8 +169,7 @@ export class SessionIndex {
 		if (
 			existing.lastSnapshotHash === nextEntry.lastSnapshotHash &&
 			existing.sessionTitle === nextEntry.sessionTitle &&
-			existing.sessionUrl === nextEntry.sessionUrl &&
-			existing.provisionalSessionKey === nextEntry.provisionalSessionKey
+			existing.sessionUrl === nextEntry.sessionUrl
 		) {
 			return {
 				entry: nextEntry,
@@ -223,8 +186,6 @@ export class SessionIndex {
 				entry: {
 					...existing,
 					sessionKey: snapshot.sessionKey,
-					provisionalSessionKey:
-						snapshot.provisionalSessionKey ?? existing.provisionalSessionKey,
 				},
 				changed: false,
 				created: false,

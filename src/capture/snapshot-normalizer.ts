@@ -75,13 +75,6 @@ function extractSessionId(snapshot: SessionSnapshot): string {
 	return normalizeText(match?.[1] ?? "");
 }
 
-function buildProvisionalSessionKey(
-	anchorTextHash: string | undefined,
-): string | undefined {
-	const normalized = normalizeText(anchorTextHash);
-	return normalized ? hashString(`provisional-session|${normalized}`) : undefined;
-}
-
 function normalizeSessionTitle(snapshot: SessionSnapshot, firstUserText: string): string {
 	const pageTitle = normalizeText(snapshot.pageTitle.replace(/\s+-\s+ChatGPT$/i, ""));
 	return (
@@ -141,15 +134,10 @@ export class SnapshotNormalizer {
 			firstUserMessage?.text ?? "",
 		);
 		const sessionId = extractSessionId(snapshot);
-		const anchorMessage = firstUserMessage ?? normalizedMessages[0];
-		const provisionalSessionKey = buildProvisionalSessionKey(
-			anchorMessage?.textHash,
-		);
 		const firstUserTextHash = firstUserMessage?.textHash ?? "";
 		const sessionKey = sessionId
 			? hashString(`session-id|${sessionId}`)
-			: provisionalSessionKey ??
-				hashString(`${snapshot.pageUrl}|${sessionTitle}|${firstUserTextHash}`);
+			: hashString(`${snapshot.pageUrl}|${sessionTitle}|${firstUserTextHash}`);
 		const snapshotHash = hashString(
 			[
 				sessionKey,
@@ -166,7 +154,6 @@ export class SnapshotNormalizer {
 			extractorVersion: snapshot.extractorVersion,
 			sessionId: sessionId || undefined,
 			sessionKey,
-			provisionalSessionKey,
 			sessionTitle,
 			pageUrl: snapshot.pageUrl,
 			pageTitle: normalizeText(snapshot.pageTitle),

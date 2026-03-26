@@ -59,7 +59,7 @@
 - `locateBestWebview()` 会在所有已打开的 ChatGPT Web Viewer 中动态选择最值得优先处理的一个：
   - 当前激活叶子优先
   - 最近发生导航 / DOM ready 的叶子优先
-  - 手动 `Bind current web viewer` 选中的叶子优先
+  - 手动 `Bind current chat web viewer` 选中的叶子优先
 
 `src/webviewer/webview-locator.ts` 采用“打分定位”而不是硬编码单个元素引用：
 
@@ -87,7 +87,6 @@
 
 - `window.__OBAR_CAPTURE__.health()`
 - `window.__OBAR_CAPTURE__.collect()`
-- `window.__OBAR_CAPTURE_COLLECT__`
 
 这意味着插件和页面的通信边界很清晰：插件只调用 `health` 和 `collect`，页面内部自己维护观察器、脏标记和缓存快照，宿主不再每个心跳都做一次全量 DOM 扫描。
 
@@ -252,7 +251,7 @@
 
 文件名生成规则在 `src/persistence/file-path.ts`：
 
-- 默认目录：`OBAR Chats`
+- 默认目录：`chatgpt`
 - 默认模板：`{{date}}_{{title}}`
 - 支持占位符：
   - `{{date}}`
@@ -306,11 +305,12 @@ obar_page_state: "conversation"
 
 设置项定义在 `src/settings/setting-tab.ts`，当前支持：
 
-- AI match rules
-- Save folder
+- Chat targets
 - File name template
 - Conversation separator
 - Message heading summary length
+- Open note after save
+- Post-processing
 - Poll interval
 - Settle repeat count
 - Settle timeout
@@ -321,9 +321,10 @@ obar_page_state: "conversation"
 
 命令定义在 `src/commands/index.ts`，当前有：
 
-- `Open web viewer`
-- `Bind current web viewer`
+- `Open configured chat web viewer`
+- `Bind current chat web viewer`
 - `Save current session`
+- `Open current session record`
 - `Insert custom note`
 - `Pause auto capture`
 - `Resume auto capture`
@@ -380,8 +381,9 @@ src/
   commands/
     bind-current-viewer.ts
     index.ts
+    insert-custom-note.ts
+    open-current-session-record.ts
     open-chatgpt.ts
-    reinject.ts
     save-now.ts
   debug/
     debug-dump.ts
@@ -393,7 +395,6 @@ src/
     session-index.ts
   runtime/
     runtime-controller.ts
-    state-machine.ts
   settings/
     setting-tab.ts
     settings.ts

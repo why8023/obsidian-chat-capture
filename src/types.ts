@@ -10,13 +10,11 @@ export type WebviewActivityReason =
 	| "destroyed";
 export type RuntimeState =
 	| "idle"
-	| "openingViewer"
 	| "bindingWebview"
 	| "injecting"
 	| "polling"
 	| "saving"
-	| "backoff"
-	| "error";
+	| "backoff";
 
 export interface ChatTargetRule {
 	urlPattern: string;
@@ -92,6 +90,7 @@ export interface NormalizedSnapshot {
 	extractorVersion: string;
 	conversationId?: string;
 	conversationKey: string;
+	provisionalConversationKey?: string;
 	conversationTitle: string;
 	pageUrl: string;
 	pageTitle: string;
@@ -110,6 +109,7 @@ export interface SessionMessageIndex {
 
 export interface SessionIndexEntry {
 	conversationKey: string;
+	provisionalConversationKey?: string;
 	filePath: string;
 	sourceUrl: string;
 	title?: string;
@@ -124,6 +124,7 @@ export interface ConversationNoteEntry {
 	filePath: string;
 	conversationId?: string;
 	conversationKey?: string;
+	provisionalConversationKey?: string;
 	chatUrl?: string;
 	title?: string;
 	createdAt?: number;

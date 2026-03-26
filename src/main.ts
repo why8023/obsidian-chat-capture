@@ -122,7 +122,9 @@ export default class ObarPlugin extends Plugin {
 		);
 		this.registerEvent(
 			this.app.metadataCache.on("resolved", () => {
-				void this.noteIndex.rebuild();
+				if (this.noteIndex.hasPendingMetadataFiles()) {
+					void this.noteIndex.rebuild();
+				}
 			}),
 		);
 		this.registerEvent(
@@ -223,7 +225,7 @@ export default class ObarPlugin extends Plugin {
 			return;
 		}
 
-		const saveResult = await this.runtime.saveSnapshotNow();
+		const saveResult = await this.runtime.saveCollectedSnapshot(snapshotResult.snapshot);
 		if (saveResult.status === "saved") {
 			const savedFile = this.getMarkdownFileByPath(saveResult.filePath);
 			if (savedFile) {
@@ -301,7 +303,7 @@ export default class ObarPlugin extends Plugin {
 	): TFile | null {
 		return this.getMarkdownFileByPath(
 			this.noteIndex.findMatch(snapshot)?.filePath ??
-				this.sessionIndex.get(snapshot.conversationKey)?.filePath,
+				this.sessionIndex.findMatch(snapshot)?.filePath,
 		);
 	}
 

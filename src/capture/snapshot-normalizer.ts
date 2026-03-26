@@ -75,6 +75,13 @@ function extractConversationId(snapshot: ConversationSnapshot): string {
 	return normalizeText(match?.[1] ?? "");
 }
 
+function buildProvisionalConversationKey(
+	anchorTextHash: string | undefined,
+): string | undefined {
+	const normalized = normalizeText(anchorTextHash);
+	return normalized ? hashString(`provisional-conversation|${normalized}`) : undefined;
+}
+
 function normalizeConversationTitle(snapshot: ConversationSnapshot, firstUserText: string): string {
 	const pageTitle = normalizeText(snapshot.pageTitle.replace(/\s+-\s+ChatGPT$/i, ""));
 	return (
@@ -134,10 +141,15 @@ export class SnapshotNormalizer {
 			firstUserMessage?.text ?? "",
 		);
 		const conversationId = extractConversationId(snapshot);
+		const anchorMessage = firstUserMessage ?? normalizedMessages[0];
+		const provisionalConversationKey = buildProvisionalConversationKey(
+			anchorMessage?.textHash,
+		);
 		const firstUserTextHash = firstUserMessage?.textHash ?? "";
 		const conversationKey = conversationId
 			? hashString(`conversation-id|${conversationId}`)
-			: hashString(`${snapshot.pageUrl}|${conversationTitle}|${firstUserTextHash}`);
+			: provisionalConversationKey ??
+				hashString(`${snapshot.pageUrl}|${conversationTitle}|${firstUserTextHash}`);
 		const snapshotHash = hashString(
 			[
 				conversationKey,
@@ -154,6 +166,7 @@ export class SnapshotNormalizer {
 			extractorVersion: snapshot.extractorVersion,
 			conversationId: conversationId || undefined,
 			conversationKey,
+			provisionalConversationKey,
 			conversationTitle,
 			pageUrl: snapshot.pageUrl,
 			pageTitle: normalizeText(snapshot.pageTitle),

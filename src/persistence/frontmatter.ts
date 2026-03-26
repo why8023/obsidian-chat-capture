@@ -18,6 +18,7 @@ const LEGACY_CONVERSATION_FRONTMATTER_KEYS = {
 	extractorVersion: "extractor_version",
 	pageState: "page_state",
 	conversationId: "conversation_id",
+	provisionalConversationKey: "provisional_conversation_key",
 } as const;
 
 const LEGACY_CONVERSATION_SOURCE = "chatgpt-webviewer";
@@ -34,6 +35,7 @@ export const OBAR_CONVERSATION_FRONTMATTER_KEYS = {
 	extractorVersion: "obar_extractor_version",
 	pageState: "obar_page_state",
 	conversationId: "obar_conversation_id",
+	provisionalConversationKey: "obar_provisional_conversation_key",
 } as const;
 
 type ConversationFrontmatterField = keyof typeof OBAR_CONVERSATION_FRONTMATTER_KEYS;
@@ -78,6 +80,10 @@ const CONVERSATION_FRONTMATTER_KEY_FALLBACKS: Record<
 	conversationId: [
 		OBAR_CONVERSATION_FRONTMATTER_KEYS.conversationId,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.conversationId,
+	],
+	provisionalConversationKey: [
+		OBAR_CONVERSATION_FRONTMATTER_KEYS.provisionalConversationKey,
+		LEGACY_CONVERSATION_FRONTMATTER_KEYS.provisionalConversationKey,
 	],
 };
 
@@ -264,6 +270,10 @@ export function buildConversationFrontmatter(
 	if (snapshot.conversationId) {
 		frontmatter[getConversationFrontmatterKey("conversationId")] =
 			snapshot.conversationId;
+	}
+	if (snapshot.provisionalConversationKey) {
+		frontmatter[getConversationFrontmatterKey("provisionalConversationKey")] =
+			snapshot.provisionalConversationKey;
 	}
 
 	return frontmatter;

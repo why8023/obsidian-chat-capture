@@ -24,6 +24,7 @@ import type {
 	NormalizedSnapshot,
 	PluginSettings,
 	PluginStateData,
+	RuntimeState,
 	ScriptExecutionResult,
 	SerializedError,
 	SessionIndexEntry,
@@ -31,7 +32,6 @@ import type {
 	WebviewBinding,
 } from "../types";
 import { ViewerManager } from "../webviewer/viewer-manager";
-import { RuntimeStateMachine } from "./state-machine";
 
 class CaptureScriptError extends Error {
 	constructor(
@@ -69,6 +69,28 @@ interface BootstrapState {
 	health: HealthcheckResult;
 }
 
+interface PreparedCaptureContext {
+	activeLeaf: boolean;
+	binding: WebviewBinding;
+	diagnostics?: CaptureDiagnostics;
+	health: HealthcheckResult;
+}
+
+interface CollectedSnapshotContext extends PreparedCaptureContext {
+	normalized: NormalizedSnapshot;
+}
+
+type CollectedSnapshotResult =
+	| {
+			ok: true;
+			context: CollectedSnapshotContext;
+	  }
+	| {
+			ok: false;
+			health: HealthcheckResult;
+			result: CaptureIdleResult;
+	  };
+
 type CurrentSnapshotResult =
 	| {
 			status: "ok";
@@ -78,7 +100,6 @@ type CurrentSnapshotResult =
 	| CaptureErrorResult;
 
 export class RuntimeController {
-	private readonly stateMachine = new RuntimeStateMachine();
 	private readonly stabilityDetector = new StabilityDetector();
 	private pollTimer: number | null = null;
 	private failureCount = 0;
@@ -86,6 +107,7 @@ export class RuntimeController {
 	private forceReinject = false;
 	private stopped = false;
 	private awaitingStability = false;
+	private runtimeState: RuntimeState = "idle";
 
 	constructor(private readonly deps: RuntimeControllerDeps) {}
 
@@ -95,6 +117,7 @@ export class RuntimeController {
 			return;
 		}
 
+		this.setRuntimeState("idle");
 		this.deps.onStatusChange(formatObarUiText("paused"));
 	}
 
@@ -135,7 +158,7 @@ export class RuntimeController {
 		this.deps.state().capturePaused = true;
 		await this.deps.persistState();
 		this.clearTimer();
-		this.stateMachine.force("idle");
+		this.setRuntimeState("idle");
 		this.awaitingStability = false;
 		this.deps.logger.info("Auto capture paused", { reason });
 		this.deps.onStatusChange(formatObarUiText("paused"));
@@ -152,7 +175,7 @@ export class RuntimeController {
 	stop(): void {
 		this.stopped = true;
 		this.clearTimer();
-		this.stateMachine.force("idle");
+		this.setRuntimeState("idle");
 		this.awaitingStability = false;
 	}
 
@@ -184,6 +207,10 @@ export class RuntimeController {
 		return this.captureOnce(true);
 	}
 
+	async saveCollectedSnapshot(snapshot: NormalizedSnapshot): Promise<CaptureRunResult> {
+		return this.persistSnapshot(snapshot);
+	}
+
 	async collectCurrentSnapshot(): Promise<CurrentSnapshotResult> {
 		if (this.isTicking) {
 			return {
@@ -194,13 +221,14 @@ export class RuntimeController {
 
 		this.isTicking = true;
 		let captureStage = "binding";
-		let binding: WebviewBinding | null = null;
+		let preparedContext: PreparedCaptureContext | null = null;
 		let diagnostics: CaptureDiagnostics | undefined;
 
 		try {
-			binding = await this.ensureBinding();
-			if (!binding) {
+			preparedContext = await this.prepareCaptureContext();
+			if (!preparedContext) {
 				const statusMessage = formatObarUiText("no matching Web Viewer found");
+				this.setRuntimeState("idle");
 				this.deps.onStatusChange(statusMessage);
 				return {
 					status: "no-matching-viewer",
@@ -208,44 +236,19 @@ export class RuntimeController {
 				};
 			}
 
-			captureStage = "bootstrap";
-			const bootstrapState = await this.ensureBootstrap(binding, this.forceReinject);
-			diagnostics = bootstrapState.diagnostics;
-
 			captureStage = "collect";
-			const collectResult =
-				await binding.webview.executeJavaScript<
-					ScriptExecutionResult<ConversationSnapshot | null>
-				>(COLLECT_SNAPSHOT_SCRIPT);
-			const rawSnapshot = this.unwrapScriptResult(collectResult);
-			diagnostics = collectResult.diagnostics;
-
-			if (!rawSnapshot) {
-				const statusMessage = formatObarUiText("collect returned no snapshot");
-				this.deps.onStatusChange(statusMessage);
-				return {
-					status: "collect-returned-no-snapshot",
-					statusMessage,
-				};
+			const collected = await this.collectNormalizedSnapshot(preparedContext);
+			diagnostics = preparedContext.diagnostics;
+			if (!collected.ok) {
+				this.deps.onStatusChange(collected.result.statusMessage);
+				return collected.result;
 			}
-
-			captureStage = "normalize";
-			await this.deps.debugDump.writeSnapshot("last-raw-snapshot", rawSnapshot);
-			const normalized = await this.deps.normalizer.normalize(rawSnapshot);
-			await this.deps.debugDump.writeSnapshot("last-normalized-snapshot", normalized);
-
-			if (normalized.messages.length === 0) {
-				const statusMessage = formatObarUiText("no messages detected");
-				this.deps.onStatusChange(statusMessage);
-				return {
-					status: "no-messages",
-					statusMessage,
-				};
-			}
+			diagnostics = collected.context.diagnostics;
+			this.setRuntimeState("polling");
 
 			return {
 				status: "ok",
-				snapshot: normalized,
+				snapshot: collected.context.normalized,
 			};
 		} catch (error) {
 			const serializedError = this.serializeError(error);
@@ -253,17 +256,18 @@ export class RuntimeController {
 			this.deps.logger.error("Collecting current snapshot failed", {
 				stage,
 				error: serializedError,
-				binding: binding
+				binding: preparedContext
 					? {
-							leafId: binding.leafId,
-							url: binding.lastUrl,
-							status: binding.status,
+							leafId: preparedContext.binding.leafId,
+							url: preparedContext.binding.lastUrl,
+							status: preparedContext.binding.status,
 						}
 					: null,
 				diagnostics:
 					error instanceof CaptureScriptError ? error.diagnostics : diagnostics,
 			});
 			const statusMessage = formatObarUiText("failed");
+			this.setRuntimeState("idle");
 			this.deps.onStatusChange(statusMessage);
 			return {
 				status: "error",
@@ -314,15 +318,14 @@ export class RuntimeController {
 		this.isTicking = true;
 		let nextDelay = this.deps.settings().pollIntervalMs;
 		let captureStage = "binding";
-		let binding: WebviewBinding | null = null;
+		let preparedContext: PreparedCaptureContext | null = null;
 		let diagnostics: CaptureDiagnostics | undefined;
-		let activeLeaf = false;
 
 		try {
-			binding = await this.ensureBinding();
-			if (!binding) {
+			preparedContext = await this.prepareCaptureContext();
+			if (!preparedContext) {
 				this.failureCount = 0;
-				this.stateMachine.force("idle");
+				this.setRuntimeState("idle");
 				this.awaitingStability = false;
 				nextDelay = this.deps.viewerManager.isAnyTrackedLeafActive()
 					? Math.min(this.deps.settings().pollIntervalMs, 1_000)
@@ -335,29 +338,17 @@ export class RuntimeController {
 				});
 			}
 
-			activeLeaf = this.deps.viewerManager.isLeafActive(binding.leafId);
-
-			this.logDebug("Capture tick bound webview", {
-				forcePersist,
-				leafId: binding.leafId,
-				url: binding.lastUrl,
-			});
-
 			captureStage = "bootstrap";
-			const bootstrapState = await this.ensureBootstrap(binding, this.forceReinject);
-			diagnostics = bootstrapState.diagnostics;
-			let health = bootstrapState.health;
-			nextDelay = this.nextIntervalFor(health, activeLeaf, this.awaitingStability);
-			this.logDebug("Capture healthcheck completed", {
-				leafId: binding.leafId,
-				url: binding.lastUrl,
-				health,
-				diagnostics,
-			});
+			diagnostics = preparedContext.diagnostics;
+			nextDelay = this.nextIntervalFor(
+				preparedContext.health,
+				preparedContext.activeLeaf,
+				this.awaitingStability,
+			);
 
-			if (!forcePersist && !this.shouldCollectSnapshot(health)) {
+			if (!forcePersist && !this.shouldCollectSnapshot(preparedContext.health)) {
 				this.failureCount = 0;
-				this.stateMachine.force("polling");
+				this.setRuntimeState("polling");
 				const statusMessage = formatObarUiText("watching for page changes");
 				this.deps.onStatusChange(statusMessage);
 				return this.reportResult({
@@ -366,92 +357,31 @@ export class RuntimeController {
 				});
 			}
 
-			this.stateMachine.force("polling");
 			captureStage = "collect";
-			const collectResult =
-				await binding.webview.executeJavaScript<
-					ScriptExecutionResult<ConversationSnapshot | null>
-				>(COLLECT_SNAPSHOT_SCRIPT);
-			const rawSnapshot = this.unwrapScriptResult(collectResult);
-			diagnostics = collectResult.diagnostics;
-			health = {
-				ok: true,
-				url: diagnostics.pageUrl ?? binding.lastUrl,
-				title: diagnostics.pageTitle,
-				pageState: diagnostics.pageState ?? health.pageState,
-				messageCount: diagnostics.messageCount ?? null,
-				dirty: diagnostics.dirty ?? false,
-				pendingUpdate: diagnostics.pendingUpdate ?? false,
-				observed: diagnostics.observed ?? health.observed,
-				visibilityState: diagnostics.visibilityState ?? health.visibilityState,
-				lastMutationAt: diagnostics.lastMutationAt ?? health.lastMutationAt,
-				lastSnapshotAt: diagnostics.lastSnapshotAt ?? Date.now(),
-			};
-			this.logDebug("Capture collect completed", {
-				leafId: binding.leafId,
-				diagnostics,
-				messageCount: Array.isArray(rawSnapshot?.turns) ? rawSnapshot.turns.length : 0,
-			});
-
-			if (!rawSnapshot) {
-				this.deps.logger.warn("Collect returned no snapshot", {
-					leafId: binding.leafId,
-					url: binding.lastUrl,
-					diagnostics,
-				});
-				this.awaitingStability = false;
-				nextDelay = this.nextIntervalFor(health, activeLeaf, this.awaitingStability);
-				const statusMessage = formatObarUiText("collect returned no snapshot");
-				this.deps.onStatusChange(statusMessage);
-				return this.reportResult({
-					status: "collect-returned-no-snapshot",
-					statusMessage,
-				});
-			}
-
-			captureStage = "normalize";
-			await this.deps.debugDump.writeSnapshot("last-raw-snapshot", rawSnapshot);
-			const normalized = await this.deps.normalizer.normalize(rawSnapshot);
-			await this.deps.debugDump.writeSnapshot("last-normalized-snapshot", normalized);
-
-			captureStage = "stability-check";
-			if (normalized.messages.length === 0) {
-				this.deps.logger.warn("Snapshot contained no messages", {
-					pageUrl: normalized.pageUrl,
-					pageState: normalized.pageState,
-					diagnostics,
-				});
+			this.setRuntimeState("polling");
+			const collected = await this.collectNormalizedSnapshot(preparedContext);
+			if (!collected.ok) {
+				diagnostics = preparedContext.diagnostics;
 				this.awaitingStability = false;
 				nextDelay = this.nextIntervalFor(
-					{
-						...health,
-						pageState: normalized.pageState,
-						messageCount: 0,
-						lastSnapshotAt: normalized.capturedAt,
-					},
-					activeLeaf,
+					collected.health,
+					preparedContext.activeLeaf,
 					this.awaitingStability,
 				);
-				const statusMessage = formatObarUiText("no messages detected");
-				this.deps.onStatusChange(statusMessage);
-				return this.reportResult({
-					status: "no-messages",
-					statusMessage,
-				});
+				this.deps.onStatusChange(collected.result.statusMessage);
+				return this.reportResult(collected.result);
 			}
 
+			diagnostics = collected.context.diagnostics;
+			const normalized = collected.context.normalized;
+			captureStage = "stability-check";
 			const stability = this.stabilityDetector.accept(normalized, this.deps.settings(), {
 				force: forcePersist,
 			});
 			this.awaitingStability = !stability.readyToPersist;
 			nextDelay = this.nextIntervalFor(
-				{
-					...health,
-					pageState: normalized.pageState,
-					messageCount: normalized.messages.length,
-					lastSnapshotAt: normalized.capturedAt,
-				},
-				activeLeaf,
+				collected.context.health,
+				preparedContext.activeLeaf,
 				this.awaitingStability,
 			);
 
@@ -473,7 +403,7 @@ export class RuntimeController {
 				!forcePersist &&
 				!this.hasStableConversationIdentity(normalized) &&
 				!this.deps.noteIndex.findMatch(normalized) &&
-				!this.deps.sessionIndex.get(normalized.conversationKey)
+				!this.deps.sessionIndex.findMatch(normalized)
 			) {
 				nextDelay = Math.min(this.deps.settings().pollIntervalMs, 1_000);
 				const statusMessage = formatObarUiText("waiting for conversation id");
@@ -484,136 +414,11 @@ export class RuntimeController {
 				});
 			}
 
-			this.stateMachine.force("saving");
 			captureStage = "write-snapshot";
-			const existingNote = this.deps.noteIndex.findMatch(normalized);
-			const rawExistingEntry = this.deps.sessionIndex.get(normalized.conversationKey);
-			const existingEntry = this.reconcileSessionEntryWithNote(
-				rawExistingEntry,
-				existingNote,
-			);
-			if (
-				rawExistingEntry &&
-				existingEntry &&
-				!this.isSameSessionEntryReference(rawExistingEntry, existingEntry)
-			) {
-				await this.deps.sessionIndex.commit(existingEntry);
-			}
-			const knownFilePaths = [
-				...this.deps.noteIndex.filePaths(),
-				...this.deps.sessionIndex
-					.entries()
-					.map((entry) => entry.filePath)
-					.filter((filePath) => this.deps.markdownWriter.hasFile(filePath)),
-			];
-			const filePath =
-				existingEntry?.filePath ??
-				existingNote?.filePath ??
-				(await this.deps.markdownWriter.resolveFilePath(normalized, knownFilePaths));
-			const merge = this.deps.sessionIndex.prepare(normalized, filePath, existingNote);
-			if (merge.skipReason) {
-				this.deps.logger.warn("Skipped regressive snapshot", {
-					conversationKey: normalized.conversationKey,
-					reason: merge.skipReason,
-				});
-				this.awaitingStability = false;
-				const statusMessage = formatObarUiText("skipped regressive snapshot");
-				this.deps.onStatusChange(statusMessage);
-				return this.reportResult({
-					status: "skipped-regressive-snapshot",
-					statusMessage,
-				});
-			}
-
-			const rewriteFrontmatterTimestamps =
-				!merge.changed &&
-				(await this.deps.markdownWriter.needsFrontmatterTimestampRewrite(
-					merge.entry.filePath,
-				));
-			const rewriteMissingFile =
-				!merge.changed && !this.deps.markdownWriter.hasFile(merge.entry.filePath);
-			let persistedEntry =
-				rewriteFrontmatterTimestamps
-					? {
-							...merge.entry,
-							createdAt:
-								existingEntry?.createdAt ??
-								existingNote?.createdAt ??
-								merge.entry.createdAt,
-							updatedAt:
-								existingEntry?.updatedAt ??
-								existingNote?.updatedAt ??
-								merge.entry.updatedAt,
-							lastStableMessageCount:
-								existingEntry?.lastStableMessageCount ??
-								existingNote?.messageCount ??
-								merge.entry.lastStableMessageCount,
-						}
-					: merge.entry;
-			let writtenFile: TFile | null = null;
-
-			if (merge.changed || rewriteFrontmatterTimestamps || rewriteMissingFile) {
-				const previousTitle = existingEntry?.title ?? existingNote?.title;
-				persistedEntry = {
-					...persistedEntry,
-					filePath: await this.deps.markdownWriter.reconcileManagedFilePath(
-						normalized,
-						persistedEntry,
-						previousTitle,
-						knownFilePaths,
-					),
-				};
-				writtenFile = await this.deps.markdownWriter.writeSnapshot(
-					normalized,
-					persistedEntry,
-				);
-				this.deps.noteIndex.upsertFromSnapshot(normalized, persistedEntry);
-				if (rewriteMissingFile) {
-					this.deps.logger.info("Conversation note restored after missing file", {
-						conversationKey: normalized.conversationKey,
-						filePath: persistedEntry.filePath,
-					});
-				}
-			}
-			if (merge.changed || merge.replacedKeys.length > 0 || rewriteMissingFile) {
-				await this.deps.sessionIndex.commit(persistedEntry, merge.replacedKeys);
-			}
-			if (merge.changed && writtenFile) {
-				const noteOpenedByPostProcessor = await this.deps.postProcessor.run(
-					writtenFile,
-				);
-				if (
-					this.deps.settings().openNoteAfterSave &&
-					!noteOpenedByPostProcessor
-				) {
-					await this.deps.openNote(writtenFile);
-				}
-			}
-
+			const persistResult = await this.persistSnapshot(normalized);
 			this.failureCount = 0;
 			this.awaitingStability = false;
-			if (merge.changed || rewriteMissingFile) {
-				const statusMessage = formatObarUiText(
-					`saved ${persistedEntry.lastStableMessageCount} messages`,
-				);
-				this.deps.onStatusChange(statusMessage);
-				return this.reportResult({
-					status: "saved",
-					statusMessage,
-					filePath: persistedEntry.filePath,
-					messageCount: persistedEntry.lastStableMessageCount,
-					created: merge.created,
-					newMessageCount: merge.newMessages.length,
-					title: persistedEntry.title,
-				});
-			}
-
-			const statusMessage = formatObarUiText("up to date");
-			this.deps.onStatusChange(statusMessage);
-			return this.reportResult({
-				status: "up-to-date",
-				statusMessage,
-			});
+			return this.reportResult(persistResult);
 		} catch (error) {
 			this.failureCount += 1;
 			const backoffDelay = Math.min(
@@ -621,7 +426,7 @@ export class RuntimeController {
 				10_000,
 			);
 			nextDelay = backoffDelay;
-			this.stateMachine.force("backoff");
+			this.setRuntimeState("backoff");
 			const serializedError = this.serializeError(error);
 			const errorContext = {
 				stage:
@@ -629,11 +434,11 @@ export class RuntimeController {
 				error: serializedError,
 				failureCount: this.failureCount,
 				backoffDelay,
-				binding: binding
+				binding: preparedContext
 					? {
-							leafId: binding.leafId,
-							url: binding.lastUrl,
-							status: binding.status,
+							leafId: preparedContext.binding.leafId,
+							url: preparedContext.binding.lastUrl,
+							status: preparedContext.binding.status,
 						}
 					: null,
 				diagnostics:
@@ -643,7 +448,7 @@ export class RuntimeController {
 			};
 			this.deps.logger.error("Capture tick failed", errorContext);
 			await this.deps.debugDump.writeRuntimeState({
-				state: this.stateMachine.state,
+				state: this.runtimeState,
 				...errorContext,
 				recentLogs: this.deps.logger.getEntries(50),
 				capturedAt: new Date().toISOString(),
@@ -666,6 +471,259 @@ export class RuntimeController {
 		}
 	}
 
+	private async prepareCaptureContext(): Promise<PreparedCaptureContext | null> {
+		this.setRuntimeState("bindingWebview");
+		const binding = await this.ensureBinding();
+		if (!binding) {
+			return null;
+		}
+
+		const activeLeaf = this.deps.viewerManager.isLeafActive(binding.leafId);
+		this.logDebug("Capture tick bound webview", {
+			leafId: binding.leafId,
+			url: binding.lastUrl,
+		});
+		const bootstrapState = await this.ensureBootstrap(binding, this.forceReinject);
+		this.logDebug("Capture healthcheck completed", {
+			leafId: binding.leafId,
+			url: binding.lastUrl,
+			health: bootstrapState.health,
+			diagnostics: bootstrapState.diagnostics,
+		});
+		return {
+			activeLeaf,
+			binding,
+			diagnostics: bootstrapState.diagnostics,
+			health: bootstrapState.health,
+		};
+	}
+
+	private async collectNormalizedSnapshot(
+		context: PreparedCaptureContext,
+	): Promise<CollectedSnapshotResult> {
+		const collectResult =
+			await context.binding.webview.executeJavaScript<
+				ScriptExecutionResult<ConversationSnapshot | null>
+			>(COLLECT_SNAPSHOT_SCRIPT);
+		const rawSnapshot = this.unwrapScriptResult(collectResult);
+		const diagnostics = collectResult.diagnostics;
+		const collectedHealth = this.mergeHealthWithDiagnostics(
+			context.health,
+			context.binding.lastUrl,
+			diagnostics,
+		);
+		this.logDebug("Capture collect completed", {
+			leafId: context.binding.leafId,
+			diagnostics,
+			messageCount: Array.isArray(rawSnapshot?.turns) ? rawSnapshot.turns.length : 0,
+		});
+
+		if (!rawSnapshot) {
+			this.deps.logger.warn("Collect returned no snapshot", {
+				leafId: context.binding.leafId,
+				url: context.binding.lastUrl,
+				diagnostics,
+			});
+			return {
+				ok: false,
+				health: collectedHealth,
+				result: {
+					status: "collect-returned-no-snapshot",
+					statusMessage: formatObarUiText("collect returned no snapshot"),
+				},
+			};
+		}
+
+		await this.deps.debugDump.writeSnapshot("last-raw-snapshot", rawSnapshot);
+		const normalized = await this.deps.normalizer.normalize(rawSnapshot);
+		await this.deps.debugDump.writeSnapshot("last-normalized-snapshot", normalized);
+
+		if (normalized.messages.length === 0) {
+			this.deps.logger.warn("Snapshot contained no messages", {
+				pageUrl: normalized.pageUrl,
+				pageState: normalized.pageState,
+				diagnostics,
+			});
+			return {
+				ok: false,
+				health: {
+					...collectedHealth,
+					pageState: normalized.pageState,
+					messageCount: 0,
+					lastSnapshotAt: normalized.capturedAt,
+				},
+				result: {
+					status: "no-messages",
+					statusMessage: formatObarUiText("no messages detected"),
+				},
+			};
+		}
+
+		return {
+			ok: true,
+			context: {
+				...context,
+				diagnostics,
+				health: {
+					...collectedHealth,
+					pageState: normalized.pageState,
+					messageCount: normalized.messages.length,
+					lastSnapshotAt: normalized.capturedAt,
+				},
+				normalized,
+			},
+		};
+	}
+
+	private mergeHealthWithDiagnostics(
+		health: HealthcheckResult,
+		fallbackUrl: string,
+		diagnostics: CaptureDiagnostics,
+	): HealthcheckResult {
+		return {
+			ok: true,
+			url: diagnostics.pageUrl ?? fallbackUrl,
+			title: diagnostics.pageTitle,
+			pageState: diagnostics.pageState ?? health.pageState,
+			messageCount: diagnostics.messageCount ?? null,
+			dirty: diagnostics.dirty ?? false,
+			pendingUpdate: diagnostics.pendingUpdate ?? false,
+			observed: diagnostics.observed ?? health.observed,
+			visibilityState: diagnostics.visibilityState ?? health.visibilityState,
+			lastMutationAt: diagnostics.lastMutationAt ?? health.lastMutationAt,
+			lastSnapshotAt: diagnostics.lastSnapshotAt ?? Date.now(),
+		};
+	}
+
+	private async persistSnapshot(
+		normalized: NormalizedSnapshot,
+	): Promise<CaptureRunResult> {
+		this.setRuntimeState("saving");
+		const existingNote = this.deps.noteIndex.findMatch(normalized);
+		const existingEntry = this.reconcileSessionEntryWithNote(
+			this.deps.sessionIndex.findMatch(normalized),
+			existingNote,
+		);
+		const knownFilePaths = this.getKnownFilePaths();
+		const filePath =
+			existingEntry?.filePath ??
+			existingNote?.filePath ??
+			(await this.deps.markdownWriter.resolveFilePath(normalized, knownFilePaths));
+		const merge = this.deps.sessionIndex.prepare(normalized, filePath, existingNote);
+		if (merge.skipReason) {
+			this.deps.logger.warn("Skipped regressive snapshot", {
+				conversationKey: normalized.conversationKey,
+				reason: merge.skipReason,
+			});
+			const statusMessage = formatObarUiText("skipped regressive snapshot");
+			this.deps.onStatusChange(statusMessage);
+			this.setRuntimeState("polling");
+			return {
+				status: "skipped-regressive-snapshot",
+				statusMessage,
+			};
+		}
+
+		const rewriteFrontmatterTimestamps =
+			!merge.changed &&
+			(await this.deps.markdownWriter.needsFrontmatterTimestampRewrite(
+				merge.entry.filePath,
+			));
+		const rewriteMissingFile =
+			!merge.changed && !this.deps.markdownWriter.hasFile(merge.entry.filePath);
+		let persistedEntry =
+			rewriteFrontmatterTimestamps
+				? {
+						...merge.entry,
+						createdAt:
+							existingEntry?.createdAt ??
+							existingNote?.createdAt ??
+							merge.entry.createdAt,
+						updatedAt:
+							existingEntry?.updatedAt ??
+							existingNote?.updatedAt ??
+							merge.entry.updatedAt,
+						lastStableMessageCount:
+							existingEntry?.lastStableMessageCount ??
+							existingNote?.messageCount ??
+							merge.entry.lastStableMessageCount,
+					}
+				: merge.entry;
+		let writtenFile: TFile | null = null;
+
+		if (merge.changed || rewriteFrontmatterTimestamps || rewriteMissingFile) {
+			const previousTitle = existingEntry?.title ?? existingNote?.title;
+			persistedEntry = {
+				...persistedEntry,
+				filePath: await this.deps.markdownWriter.reconcileManagedFilePath(
+					normalized,
+					persistedEntry,
+					previousTitle,
+					knownFilePaths,
+				),
+			};
+			writtenFile = await this.deps.markdownWriter.writeSnapshot(
+				normalized,
+				persistedEntry,
+			);
+			this.deps.noteIndex.upsertFromSnapshot(normalized, persistedEntry);
+			if (rewriteMissingFile) {
+				this.deps.logger.info("Conversation note restored after missing file", {
+					conversationKey: normalized.conversationKey,
+					filePath: persistedEntry.filePath,
+				});
+			}
+		}
+		if (merge.changed || merge.replacedKeys.length > 0 || rewriteMissingFile) {
+			await this.deps.sessionIndex.commit(persistedEntry, merge.replacedKeys);
+		}
+		if (merge.changed && writtenFile) {
+			const noteOpenedByPostProcessor = await this.deps.postProcessor.run(
+				writtenFile,
+			);
+			if (
+				this.deps.settings().openNoteAfterSave &&
+				!noteOpenedByPostProcessor
+			) {
+				await this.deps.openNote(writtenFile);
+			}
+		}
+
+		this.setRuntimeState("polling");
+		if (merge.changed || rewriteMissingFile) {
+			const statusMessage = formatObarUiText(
+				`saved ${persistedEntry.lastStableMessageCount} messages`,
+			);
+			this.deps.onStatusChange(statusMessage);
+			return {
+				status: "saved",
+				statusMessage,
+				filePath: persistedEntry.filePath,
+				messageCount: persistedEntry.lastStableMessageCount,
+				created: merge.created,
+				newMessageCount: merge.newMessages.length,
+				title: persistedEntry.title,
+			};
+		}
+
+		const statusMessage = formatObarUiText("up to date");
+		this.deps.onStatusChange(statusMessage);
+		return {
+			status: "up-to-date",
+			statusMessage,
+		};
+	}
+
+	private getKnownFilePaths(): string[] {
+		return [
+			...this.deps.noteIndex.filePaths(),
+			...this.deps.sessionIndex
+				.entries()
+				.map((entry) => entry.filePath)
+				.filter((filePath) => this.deps.markdownWriter.hasFile(filePath)),
+		];
+	}
+
 	private async ensureBinding(): Promise<WebviewBinding | null> {
 		return this.deps.viewerManager.locateBestWebview();
 	}
@@ -674,7 +732,7 @@ export class RuntimeController {
 		binding: WebviewBinding,
 		forceReinject: boolean,
 	): Promise<BootstrapState> {
-		this.stateMachine.force("injecting");
+		this.setRuntimeState("injecting");
 		await this.waitForDomReady(binding);
 
 		let hasBootstrap = false;
@@ -843,20 +901,11 @@ export class RuntimeController {
 		return {
 			...entry,
 			filePath: note.filePath || entry.filePath,
+			provisionalConversationKey:
+				note.provisionalConversationKey ?? entry.provisionalConversationKey,
 			sourceUrl: note.chatUrl ?? entry.sourceUrl,
 			title: note.title ?? entry.title,
 		};
-	}
-
-	private isSameSessionEntryReference(
-		left: SessionIndexEntry,
-		right: SessionIndexEntry,
-	): boolean {
-		return (
-			left.filePath === right.filePath &&
-			left.sourceUrl === right.sourceUrl &&
-			left.title === right.title
-		);
 	}
 
 	private nextIntervalFor(
@@ -929,6 +978,10 @@ export class RuntimeController {
 	private reportResult<T extends CaptureRunResult>(result: T): T {
 		this.deps.onCaptureResult(result);
 		return result;
+	}
+
+	private setRuntimeState(nextState: RuntimeState): void {
+		this.runtimeState = nextState;
 	}
 
 	private logDebug(message: string, context?: unknown): void {

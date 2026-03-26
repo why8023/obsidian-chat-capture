@@ -69,6 +69,29 @@ export class SessionIndex {
 		return this.sessions[conversationKey];
 	}
 
+	findMatch(snapshot: Pick<
+		NormalizedSnapshot,
+		"conversationKey" | "provisionalConversationKey"
+	>): SessionIndexEntry | undefined {
+		const exactMatch = this.sessions[snapshot.conversationKey];
+		if (exactMatch) {
+			return exactMatch;
+		}
+
+		if (!snapshot.provisionalConversationKey) {
+			return undefined;
+		}
+
+		const provisionalMatches = this.findMatchesByProvisionalConversationKey(
+			snapshot.provisionalConversationKey,
+		);
+		if (provisionalMatches.length !== 1) {
+			return undefined;
+		}
+
+		return provisionalMatches[0]?.entry;
+	}
+
 	entries(): SessionIndexEntry[] {
 		return Object.values(this.sessions);
 	}
@@ -98,6 +121,18 @@ export class SessionIndex {
 			.sort(compareSessionMatches);
 	}
 
+	private findMatchesByProvisionalConversationKey(
+		provisionalConversationKey: string,
+	): SessionEntryMatch[] {
+		return Object.entries(this.sessions)
+			.filter(
+				([, entry]) =>
+					entry.provisionalConversationKey === provisionalConversationKey,
+			)
+			.map(([key, entry]) => ({ key, entry }))
+			.sort(compareSessionMatches);
+	}
+
 	private createEntryFromNote(
 		note: ConversationNoteEntry,
 		snapshot: NormalizedSnapshot,
@@ -105,6 +140,8 @@ export class SessionIndex {
 	): SessionIndexEntry {
 		return {
 			conversationKey: snapshot.conversationKey,
+			provisionalConversationKey:
+				note.provisionalConversationKey ?? snapshot.provisionalConversationKey,
 			filePath: note.filePath || filePath,
 			sourceUrl: note.chatUrl ?? snapshot.pageUrl,
 			title: note.title ?? snapshot.conversationTitle,
@@ -124,18 +161,30 @@ export class SessionIndex {
 		const exactMatch = this.sessions[snapshot.conversationKey];
 		const filePathMatches = this.findMatchesByFilePath(filePath);
 		const sourceUrlMatches = this.findMatchesBySourceUrl(snapshot.pageUrl);
+		const provisionalMatches = snapshot.provisionalConversationKey
+			? this.findMatchesByProvisionalConversationKey(
+					snapshot.provisionalConversationKey,
+				)
+			: [];
+		const provisionalMatch =
+			provisionalMatches.length === 1 ? provisionalMatches[0] : undefined;
 		const existingMatch = exactMatch
 			? { key: snapshot.conversationKey, entry: exactMatch }
-			: filePathMatches[0] ?? sourceUrlMatches[0];
+			: provisionalMatch ?? filePathMatches[0] ?? sourceUrlMatches[0];
 		const existing =
 			existingMatch?.entry ??
 			(existingNote ? this.createEntryFromNote(existingNote, snapshot, filePath) : undefined);
-		const replacedKeys = [...filePathMatches, ...sourceUrlMatches]
+		const replacedKeys = [
+			...filePathMatches,
+			...sourceUrlMatches,
+			...provisionalMatches,
+		]
 			.map((match) => match.key)
 			.filter((key) => key !== snapshot.conversationKey)
 			.filter((key, index, keys) => keys.indexOf(key) === index);
 		const nextEntry: SessionIndexEntry = {
 			conversationKey: snapshot.conversationKey,
+			provisionalConversationKey: snapshot.provisionalConversationKey,
 			filePath: existing?.filePath ?? filePath,
 			sourceUrl: snapshot.pageUrl,
 			title: snapshot.conversationTitle,
@@ -160,7 +209,8 @@ export class SessionIndex {
 		if (
 			existing.lastSnapshotHash === nextEntry.lastSnapshotHash &&
 			existing.title === nextEntry.title &&
-			existing.sourceUrl === nextEntry.sourceUrl
+			existing.sourceUrl === nextEntry.sourceUrl &&
+			existing.provisionalConversationKey === nextEntry.provisionalConversationKey
 		) {
 			return {
 				entry: nextEntry,
@@ -177,6 +227,9 @@ export class SessionIndex {
 				entry: {
 					...existing,
 					conversationKey: snapshot.conversationKey,
+					provisionalConversationKey:
+						snapshot.provisionalConversationKey ??
+						existing.provisionalConversationKey,
 				},
 				changed: false,
 				created: false,

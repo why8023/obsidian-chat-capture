@@ -154,7 +154,6 @@ window.__OBAR_CAPTURE__ = {
   collect: extractor.collect,
   getDiagnostics: extractor.getDiagnostics,
 };
-window.__OBAR_CAPTURE_COLLECT__ = extractor.collect;
 return {
   ok: true,
   stage,

@@ -2,7 +2,6 @@ import { normalizePath } from "obsidian";
 import {
 	DEFAULT_CHAT_TARGET_SAVE_FOLDER,
 	DEFAULT_CHAT_TARGET_URL_PATTERN,
-	LEGACY_DEFAULT_SAVE_FOLDER,
 } from "../constants";
 import type { ChatTargetRule, PluginSettings } from "../types";
 
@@ -31,14 +30,6 @@ function normalizeFolder(
 
 	const candidate = input.trim().replace(/^\/+|\/+$/g, "");
 	return candidate ? normalizeFolderValue(candidate) : "";
-}
-
-function normalizeLegacyFolder(input: string | undefined): string {
-	if (input === undefined || input.trim() === "" || input.trim() === LEGACY_DEFAULT_SAVE_FOLDER) {
-		return DEFAULT_CHAT_TARGET_SAVE_FOLDER;
-	}
-
-	return normalizeFolder(input, DEFAULT_CHAT_TARGET_SAVE_FOLDER);
 }
 
 function isValidUrlPattern(value: string): boolean {
@@ -70,26 +61,6 @@ export function normalizeChatTargetRules(
 	}
 
 	return rules.map((rule) => normalizeChatTargetRule(rule));
-}
-
-export function migrateLegacyChatTargetRules(data: {
-	chatTargets?: readonly Partial<ChatTargetRule>[] | null;
-	chatgptUrl?: string;
-	saveFolder?: string;
-}): ChatTargetRule[] {
-	if (data.chatTargets && data.chatTargets.length > 0) {
-		return normalizeChatTargetRules(data.chatTargets);
-	}
-
-	return [
-		{
-			urlPattern: normalizeUrlPattern(
-				data.chatgptUrl,
-				DEFAULT_CHAT_TARGET_URL_PATTERN,
-			),
-			saveFolder: normalizeLegacyFolder(data.saveFolder),
-		},
-	];
 }
 
 export function isActiveChatTargetRule(rule: ChatTargetRule): boolean {

@@ -136,11 +136,7 @@ export interface PluginStateData {
 	capturePaused: boolean;
 }
 
-export interface PersistedPluginSettingsData extends Partial<PluginSettings> {
-	chatgptUrl?: string;
-	saveFolder?: string;
-	conversationRoundSeparator?: string;
-}
+export interface PersistedPluginSettingsData extends Partial<PluginSettings> {}
 
 export interface PersistedPluginData {
 	settings?: PersistedPluginSettingsData;

@@ -5,7 +5,7 @@ import type {
 	PluginStateData,
 	PersistedPluginSettingsData,
 } from "../types";
-import { migrateLegacyChatTargetRules } from "./chat-targets";
+import { normalizeChatTargetRules } from "./chat-targets";
 
 function clampInteger(
 	value: number | undefined,
@@ -49,17 +49,13 @@ export function normalizePluginSettings(
 	data?: PersistedPluginSettingsData,
 ): PluginSettings {
 	return {
-		chatTargets: migrateLegacyChatTargetRules({
-			chatTargets: data?.chatTargets,
-			chatgptUrl: data?.chatgptUrl,
-			saveFolder: data?.saveFolder,
-		}),
+		chatTargets: normalizeChatTargetRules(data?.chatTargets),
 		fileNameTemplate: normalizeTemplate(
 			data?.fileNameTemplate,
 			DEFAULT_SETTINGS.fileNameTemplate,
 		),
 		sessionRoundSeparator: normalizeSessionRoundSeparator(
-			data?.sessionRoundSeparator ?? data?.conversationRoundSeparator,
+			data?.sessionRoundSeparator,
 			DEFAULT_SETTINGS.sessionRoundSeparator,
 		),
 		messageHeadingSummaryLength: clampInteger(

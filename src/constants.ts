@@ -7,7 +7,6 @@ export const OBAR_UI_PREFIX = "OBAR";
 
 export const DEFAULT_CHAT_TARGET_URL_PATTERN = "https://chatgpt.com/";
 export const DEFAULT_CHAT_TARGET_SAVE_FOLDER = "chatgpt";
-export const LEGACY_DEFAULT_SAVE_FOLDER = "OBAR Chats";
 
 export const DEFAULT_SETTINGS: PluginSettings = {
 	chatTargets: [

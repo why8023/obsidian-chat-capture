@@ -9,34 +9,6 @@ import type {
 import { formatLocalTimestamp } from "./date-format";
 import { shiftMarkdownFirstLevelHeadings } from "./markdown-heading-shifter";
 
-const LEGACY_CONVERSATION_FRONTMATTER_KEYS = {
-	source: "source",
-	sessionKey: "conversation_key",
-	sessionUrl: "chat_url",
-	createdAt: "created_at",
-	updatedAt: "updated_at",
-	messageCount: "message_count",
-	extractorVersion: "extractor_version",
-	pageState: "page_state",
-	sessionId: "conversation_id",
-	provisionalSessionKey: "provisional_conversation_key",
-} as const;
-
-const PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS = {
-	source: "obar_source",
-	sessionKey: "obar_conversation_key",
-	sessionTitle: "obar_conversation_title",
-	sessionUrl: "obar_chat_url",
-	createdAt: "obar_created_at",
-	updatedAt: "obar_updated_at",
-	messageCount: "obar_message_count",
-	extractorVersion: "obar_extractor_version",
-	pageState: "obar_page_state",
-	sessionId: "obar_conversation_id",
-	provisionalSessionKey: "obar_provisional_conversation_key",
-} as const;
-
-const LEGACY_CONVERSATION_SOURCE = "chatgpt-webviewer";
 export const OBAR_RECORD_SOURCE = "obar-chatgpt-webviewer";
 
 export const OBAR_RECORD_FRONTMATTER_KEYS = {
@@ -54,64 +26,6 @@ export const OBAR_RECORD_FRONTMATTER_KEYS = {
 } as const;
 
 type RecordFrontmatterField = keyof typeof OBAR_RECORD_FRONTMATTER_KEYS;
-
-const RECORD_FRONTMATTER_KEY_FALLBACKS: Record<
-	RecordFrontmatterField,
-	readonly string[]
-> = {
-	source: [
-		OBAR_RECORD_FRONTMATTER_KEYS.source,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.source,
-	],
-	sessionKey: [
-		OBAR_RECORD_FRONTMATTER_KEYS.sessionKey,
-		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.sessionKey,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.sessionKey,
-	],
-	sessionTitle: [
-		OBAR_RECORD_FRONTMATTER_KEYS.sessionTitle,
-		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.sessionTitle,
-	],
-	sessionUrl: [
-		OBAR_RECORD_FRONTMATTER_KEYS.sessionUrl,
-		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.sessionUrl,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.sessionUrl,
-	],
-	createdAt: [
-		OBAR_RECORD_FRONTMATTER_KEYS.createdAt,
-		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.createdAt,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.createdAt,
-	],
-	updatedAt: [
-		OBAR_RECORD_FRONTMATTER_KEYS.updatedAt,
-		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.updatedAt,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.updatedAt,
-	],
-	messageCount: [
-		OBAR_RECORD_FRONTMATTER_KEYS.messageCount,
-		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.messageCount,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.messageCount,
-	],
-	extractorVersion: [
-		OBAR_RECORD_FRONTMATTER_KEYS.extractorVersion,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.extractorVersion,
-	],
-	pageState: [
-		OBAR_RECORD_FRONTMATTER_KEYS.pageState,
-		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.pageState,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.pageState,
-	],
-	sessionId: [
-		OBAR_RECORD_FRONTMATTER_KEYS.sessionId,
-		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.sessionId,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.sessionId,
-	],
-	provisionalSessionKey: [
-		OBAR_RECORD_FRONTMATTER_KEYS.provisionalSessionKey,
-		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.provisionalSessionKey,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.provisionalSessionKey,
-	],
-};
 
 function yamlScalar(value: number | string): string {
 	if (typeof value === "number") {
@@ -185,18 +99,11 @@ export function readRecordFrontmatterEntry(
 	frontmatter: FrontMatterCache,
 	field: RecordFrontmatterField,
 ): unknown {
-	for (const key of RECORD_FRONTMATTER_KEY_FALLBACKS[field]) {
-		const value: unknown = parseFrontMatterEntry(frontmatter, key);
-		if (value !== undefined && value !== null) {
-			return value;
-		}
-	}
-
-	return undefined;
+	return parseFrontMatterEntry(frontmatter, getRecordFrontmatterKey(field));
 }
 
 export function isSupportedRecordSource(value: string | undefined): boolean {
-	return value === OBAR_RECORD_SOURCE || value === LEGACY_CONVERSATION_SOURCE;
+	return value === OBAR_RECORD_SOURCE;
 }
 
 export function renderMessageMarkdown(

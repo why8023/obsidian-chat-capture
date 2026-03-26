@@ -92,7 +92,6 @@ export interface NormalizedSnapshot {
 	extractorVersion: string;
 	conversationId?: string;
 	conversationKey: string;
-	conversationAliasKey: string;
 	conversationTitle: string;
 	pageUrl: string;
 	pageTitle: string;
@@ -125,7 +124,6 @@ export interface ConversationNoteEntry {
 	filePath: string;
 	conversationId?: string;
 	conversationKey?: string;
-	conversationAliasKey?: string;
 	chatUrl?: string;
 	title?: string;
 	createdAt?: number;

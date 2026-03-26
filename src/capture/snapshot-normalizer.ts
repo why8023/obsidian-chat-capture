@@ -85,14 +85,6 @@ function normalizeConversationTitle(snapshot: ConversationSnapshot, firstUserTex
 	);
 }
 
-function buildConversationAliasBase(pageUrl: string): string {
-	try {
-		return new URL(pageUrl).origin.toLowerCase();
-	} catch {
-		return normalizeText(pageUrl.split("?")[0]?.split("#")[0] ?? "").toLowerCase();
-	}
-}
-
 export class SnapshotNormalizer {
 	constructor(private readonly defuddleAdapter = new DefuddleAdapter()) {}
 
@@ -142,19 +134,10 @@ export class SnapshotNormalizer {
 			firstUserMessage?.text ?? "",
 		);
 		const conversationId = extractConversationId(snapshot);
-		const aliasSeedMessage = firstUserMessage ?? normalizedMessages[0];
 		const firstUserTextHash = firstUserMessage?.textHash ?? "";
 		const conversationKey = conversationId
 			? hashString(`conversation-id|${conversationId}`)
 			: hashString(`${snapshot.pageUrl}|${conversationTitle}|${firstUserTextHash}`);
-		const conversationAliasKey = hashString(
-			[
-				"conversation-alias",
-				buildConversationAliasBase(snapshot.pageUrl),
-				aliasSeedMessage?.role ?? "unknown",
-				aliasSeedMessage?.textHash ?? "",
-			].join("|"),
-		);
 		const snapshotHash = hashString(
 			[
 				conversationKey,
@@ -171,7 +154,6 @@ export class SnapshotNormalizer {
 			extractorVersion: snapshot.extractorVersion,
 			conversationId: conversationId || undefined,
 			conversationKey,
-			conversationAliasKey,
 			conversationTitle,
 			pageUrl: snapshot.pageUrl,
 			pageTitle: normalizeText(snapshot.pageTitle),

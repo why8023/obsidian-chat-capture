@@ -79,16 +79,12 @@ function compareEntries(left: ConversationNoteEntry, right: ConversationNoteEntr
 	return left.filePath.localeCompare(right.filePath);
 }
 
-type ConversationIdentityField =
-	| "conversationId"
-	| "conversationKey"
-	| "conversationAliasKey";
+type ConversationIdentityField = "conversationId" | "conversationKey";
 
 export class ConversationNoteIndex {
 	private readonly byFilePath = new Map<string, ConversationNoteEntry>();
 	private readonly byConversationId = new Map<string, ConversationNoteEntry>();
 	private readonly byConversationKey = new Map<string, ConversationNoteEntry>();
-	private readonly byConversationAliasKey = new Map<string, ConversationNoteEntry>();
 
 	constructor(
 		private readonly app: App,
@@ -100,7 +96,6 @@ export class ConversationNoteIndex {
 		this.byFilePath.clear();
 		this.byConversationId.clear();
 		this.byConversationKey.clear();
-		this.byConversationAliasKey.clear();
 
 		for (const file of this.collectTrackedMarkdownFiles()) {
 			this.reindexFile(file);
@@ -129,8 +124,7 @@ export class ConversationNoteIndex {
 		}
 
 		return (
-			this.byConversationKey.get(snapshot.conversationKey) ??
-			this.byConversationAliasKey.get(snapshot.conversationAliasKey)
+			this.byConversationKey.get(snapshot.conversationKey)
 		);
 	}
 
@@ -154,7 +148,6 @@ export class ConversationNoteIndex {
 			filePath: entry.filePath,
 			conversationId: snapshot.conversationId,
 			conversationKey: snapshot.conversationKey,
-			conversationAliasKey: snapshot.conversationAliasKey,
 			chatUrl: snapshot.pageUrl,
 			title: snapshot.conversationTitle,
 			createdAt: entry.createdAt,
@@ -304,15 +297,11 @@ export class ConversationNoteIndex {
 		const conversationId =
 			normalizeString(readConversationFrontmatterEntry(frontmatter, "conversationId")) ??
 			extractConversationIdFromUrl(chatUrl);
-		const conversationAliasKey = normalizeString(
-			readConversationFrontmatterEntry(frontmatter, "conversationAliasKey"),
-		);
 
 		return {
 			filePath: file.path,
 			conversationId,
 			conversationKey,
-			conversationAliasKey,
 			chatUrl,
 			title:
 				normalizeString(readConversationFrontmatterEntry(frontmatter, "title")) ??
@@ -342,15 +331,6 @@ export class ConversationNoteIndex {
 			this.byConversationKey,
 			"conversationKey",
 		);
-		this.refreshIdentity(
-			record.conversationAliasKey,
-			this.byConversationAliasKey,
-			"conversationAliasKey",
-			{
-				requireUnique: true,
-				warnOnDuplicate: false,
-			},
-		);
 	}
 
 	private removePath(path: string): void {
@@ -369,15 +349,6 @@ export class ConversationNoteIndex {
 			previous.conversationKey,
 			this.byConversationKey,
 			"conversationKey",
-		);
-		this.refreshIdentity(
-			previous.conversationAliasKey,
-			this.byConversationAliasKey,
-			"conversationAliasKey",
-			{
-				requireUnique: true,
-				warnOnDuplicate: false,
-			},
 		);
 	}
 

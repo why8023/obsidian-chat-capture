@@ -7,6 +7,7 @@ import type {
 	SessionIndexEntry,
 } from "../types";
 import { formatLocalTimestamp } from "./date-format";
+import { shiftMarkdownFirstLevelHeadings } from "./markdown-heading-shifter";
 
 const LEGACY_CONVERSATION_FRONTMATTER_KEYS = {
 	source: "source",
@@ -142,76 +143,13 @@ function buildMessageHeading(
 	return summary ? `${roleHeading}: ${summary}` : roleHeading;
 }
 
-function isSetextHeadingUnderline(line: string): boolean {
-	return /^ {0,3}(=+|-+)\s*$/.test(line);
-}
-
-function shiftMarkdownHeadings(markdown: string, depth: number): string {
-	if (!markdown || depth <= 0) {
-		return markdown;
-	}
-
-	const lines = markdown.split("\n");
-	const shifted: string[] = [];
-	let fenceMarker: string | null = null;
-
-	for (let index = 0; index < lines.length; index += 1) {
-		const line = lines[index] ?? "";
-		const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
-		if (fenceMatch) {
-			const marker = fenceMatch[1] ?? "";
-			if (!fenceMarker) {
-				fenceMarker = marker;
-			} else if (
-				marker[0] === fenceMarker[0] &&
-				marker.length >= fenceMarker.length
-			) {
-				fenceMarker = null;
-			}
-
-			shifted.push(line);
-			continue;
-		}
-
-		if (!fenceMarker) {
-			const nextLine = lines[index + 1];
-			if (nextLine && line.trim() && isSetextHeadingUnderline(nextLine)) {
-				const baseLevel = nextLine.trimStart().startsWith("=") ? 1 : 2;
-				if (baseLevel === 1) {
-					shifted.push(`${"#".repeat(Math.min(6, baseLevel + depth))} ${line.trim()}`);
-					index += 1;
-					continue;
-				}
-			}
-
-			const atxMatch = line.match(/^( {0,3})(#{1,6})(\s+|$)(.*)$/);
-			if (atxMatch) {
-				const indent = atxMatch[1] ?? "";
-				const hashes = atxMatch[2] ?? "";
-				const gap = atxMatch[3] ?? "";
-				const content = atxMatch[4] ?? "";
-				if (hashes.length === 1) {
-					shifted.push(
-						`${indent}${"#".repeat(Math.min(6, hashes.length + depth))}${gap}${content}`,
-					);
-					continue;
-				}
-			}
-		}
-
-		shifted.push(line);
-	}
-
-	return shifted.join("\n");
-}
-
 function renderMessageContent(message: NormalizedMessage): string {
 	const content = message.markdown || message.text;
 	if (!content) {
 		return "";
 	}
 
-	return shiftMarkdownHeadings(content, 1);
+	return shiftMarkdownFirstLevelHeadings(content, 1);
 }
 
 export function getConversationFrontmatterKey(

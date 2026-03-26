@@ -1,7 +1,7 @@
 {
 	"id": "obar",
 	"name": "OBAR",
-	"version": "0.0.8",
+	"version": "0.0.9",
 	"minAppVersion": "1.8.3",
 	"description": "OBAR captures ChatGPT Web Viewer sessions into Markdown records.",
 	"author": "wangw",

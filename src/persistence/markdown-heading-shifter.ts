@@ -1,4 +1,4 @@
-import type { Heading, Root } from "mdast";
+import type { Heading } from "mdast";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
@@ -58,7 +58,7 @@ function collectFirstLevelHeadingReplacements(
 	markdown: string,
 	depthDelta: number,
 ): MarkdownReplacement[] {
-	const tree = markdownParser.parse(markdown) as Root;
+	const tree = markdownParser.parse(markdown);
 	const replacements: MarkdownReplacement[] = [];
 
 	visit(tree, "heading", (node: Heading) => {

@@ -1,6 +1,6 @@
 import type { PluginSettings, PluginStateData } from "./types";
 
-export const EXTRACTOR_VERSION = "0.3.0";
+export const EXTRACTOR_VERSION = "0.4.0";
 export const LOG_BUFFER_LIMIT = 500;
 export const OBAR_CAPTURE_SOURCE = "obar-chatgpt-webviewer";
 export const OBAR_UI_PREFIX = "OBAR";

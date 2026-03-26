@@ -133,7 +133,7 @@ export interface PluginStateData {
 	capturePaused: boolean;
 }
 
-export interface PersistedPluginSettingsData extends Partial<PluginSettings> {}
+export type PersistedPluginSettingsData = Partial<PluginSettings>;
 
 export interface PersistedPluginData {
 	settings?: PersistedPluginSettingsData;

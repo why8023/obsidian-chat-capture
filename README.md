@@ -270,7 +270,7 @@ obar_session_url: "..."
 obar_record_created_at: "..."
 obar_record_updated_at: "..."
 obar_record_message_count: 12
-obar_extractor_version: "0.1.0"
+obar_extractor_version: "0.4.0"
 obar_session_state: "session"
 ---
 

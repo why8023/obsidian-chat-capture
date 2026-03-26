@@ -124,8 +124,8 @@ ${turnShellCollectorSource
       pageUrl: location.href,
       pageTitle: document.title,
       capturedAt: new Date().toISOString(),
-      conversationId: getConversationIdFromUrl(),
-      conversationTitle: getDocumentConversationTitle(),
+      sessionId: getSessionIdFromUrl(),
+      sessionTitle: getDocumentSessionTitle(),
       pageState: detectPageState(turns),
       turns,
     };

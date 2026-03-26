@@ -9,7 +9,7 @@ import { registerCommands } from "./commands";
 import { SnapshotNormalizer } from "./capture/snapshot-normalizer";
 import { DebugDumpWriter } from "./debug/debug-dump";
 import { Logger } from "./debug/logger";
-import { ConversationNoteIndex } from "./persistence/conversation-note-index";
+import { RecordIndex } from "./persistence/record-index";
 import { MarkdownWriter } from "./persistence/markdown-writer";
 import { SessionIndex } from "./persistence/session-index";
 import { MarkdownPostProcessor } from "./post-processing/markdown-post-processor";
@@ -24,7 +24,7 @@ import { CaptureNoticeManager } from "./ui/capture-notice-manager";
 import { MarkdownNoteOpener } from "./ui/markdown-note-opener";
 import type {
 	CaptureRunResult,
-	NormalizedSnapshot,
+	NormalizedSessionSnapshot,
 	PersistedPluginData,
 	PluginSettings,
 	PluginStateData,
@@ -36,7 +36,7 @@ export default class ObarPlugin extends Plugin {
 	state: PluginStateData = DEFAULT_PLUGIN_STATE;
 	logger!: Logger;
 	debugDump!: DebugDumpWriter;
-	noteIndex!: ConversationNoteIndex;
+	recordIndex!: RecordIndex;
 	sessionIndex!: SessionIndex;
 	markdownWriter!: MarkdownWriter;
 	postProcessor!: MarkdownPostProcessor;
@@ -56,12 +56,12 @@ export default class ObarPlugin extends Plugin {
 			() => this.settings.debugMode || this.settings.saveRawSnapshot,
 			this.logger,
 		);
-		this.noteIndex = new ConversationNoteIndex(
+		this.recordIndex = new RecordIndex(
 			this.app,
 			() => this.settings,
 			this.logger,
 		);
-		await this.noteIndex.rebuild();
+		await this.recordIndex.rebuild();
 		this.sessionIndex = new SessionIndex();
 		this.markdownWriter = new MarkdownWriter(
 			this.app,
@@ -86,7 +86,7 @@ export default class ObarPlugin extends Plugin {
 			state: () => this.state,
 			persistState: () => this.persistPluginData(),
 			viewerManager: this.viewerManager,
-			noteIndex: this.noteIndex,
+			recordIndex: this.recordIndex,
 			sessionIndex: this.sessionIndex,
 			markdownWriter: this.markdownWriter,
 			postProcessor: this.postProcessor,
@@ -112,40 +112,40 @@ export default class ObarPlugin extends Plugin {
 
 		this.registerEvent(
 			this.app.metadataCache.on("changed", (file, _data, cache) => {
-				this.noteIndex.handleMetadataChanged(file, cache);
+				this.recordIndex.handleMetadataChanged(file, cache);
 			}),
 		);
 		this.registerEvent(
 			this.app.metadataCache.on("deleted", (file) => {
-				this.noteIndex.handleMetadataDeleted(file);
+				this.recordIndex.handleMetadataDeleted(file);
 			}),
 		);
 		this.registerEvent(
 			this.app.metadataCache.on("resolved", () => {
-				if (this.noteIndex.hasPendingMetadataFiles()) {
-					void this.noteIndex.rebuild();
+				if (this.recordIndex.hasPendingMetadataFiles()) {
+					void this.recordIndex.rebuild();
 				}
 			}),
 		);
 		this.registerEvent(
 			this.app.vault.on("create", (file) => {
-				this.noteIndex.handleVaultTouch(file);
+				this.recordIndex.handleVaultTouch(file);
 			}),
 		);
 		this.registerEvent(
 			this.app.vault.on("modify", (file) => {
-				this.noteIndex.handleVaultTouch(file);
+				this.recordIndex.handleVaultTouch(file);
 			}),
 		);
 		this.registerEvent(
 			this.app.vault.on("rename", (file, oldPath) => {
-				this.noteIndex.handleVaultRename(file, oldPath);
+				this.recordIndex.handleVaultRename(file, oldPath);
 				this.sessionIndex.forgetPathTree(oldPath);
 			}),
 		);
 		this.registerEvent(
 			this.app.vault.on("delete", (file) => {
-				this.noteIndex.handleVaultDelete(file);
+				this.recordIndex.handleVaultDelete(file);
 				this.sessionIndex.forgetPathTree(file.path);
 			}),
 		);
@@ -282,7 +282,7 @@ export default class ObarPlugin extends Plugin {
 			previousTrackedFolders.length !== nextTrackedFolders.length ||
 			previousTrackedFolders.some((folder, index) => folder !== nextTrackedFolders[index])
 		) {
-			await this.noteIndex.rebuild();
+			await this.recordIndex.rebuild();
 		}
 		await this.runtime.handleSettingsUpdated();
 	}
@@ -299,10 +299,10 @@ export default class ObarPlugin extends Plugin {
 	}
 
 	private resolveCurrentSessionRecordFile(
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 	): TFile | null {
 		return this.getMarkdownFileByPath(
-			this.noteIndex.findMatch(snapshot)?.filePath ??
+			this.recordIndex.findMatch(snapshot)?.filePath ??
 				this.sessionIndex.findMatch(snapshot)?.filePath,
 		);
 	}

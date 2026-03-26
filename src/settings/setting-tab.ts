@@ -27,10 +27,10 @@ export class ObarSettingTab extends PluginSettingTab {
 
 		this.addSectionHeading(copy.sections.output);
 		this.addTextSetting(
-			copy.fields.conversationRoundSeparator,
-			this.plugin.settings.conversationRoundSeparator,
+			copy.fields.sessionRoundSeparator,
+			this.plugin.settings.sessionRoundSeparator,
 			async (value) => {
-				await this.plugin.updateSettings({ conversationRoundSeparator: value });
+				await this.plugin.updateSettings({ sessionRoundSeparator: value });
 			},
 		);
 		this.addTextSetting(

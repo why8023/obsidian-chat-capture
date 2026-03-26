@@ -17,7 +17,7 @@ export interface SettingsTabCopy {
 	fields: {
 		chatTargets: SettingText;
 		fileNameTemplate: SettingText;
-		conversationRoundSeparator: SettingText;
+		sessionRoundSeparator: SettingText;
 		messageHeadingSummaryLength: SettingText;
 		openNoteAfterSave: SettingText;
 		postProcessingEnabled: SettingText;
@@ -77,8 +77,8 @@ const ENGLISH_COPY: SettingsTabCopy = {
 			description: "Use {{date}}, {{title}}, and {{key}} placeholders.",
 			placeholder: "{{date}}_{{title}}",
 		},
-		conversationRoundSeparator: {
-			name: "Conversation separator",
+		sessionRoundSeparator: {
+			name: "Session separator",
 			description:
 				"Inserted before each new USER turn. Use --- for a Markdown horizontal rule. Leave blank to disable it.",
 			placeholder: "---",
@@ -190,8 +190,8 @@ const CHINESE_COPY: SettingsTabCopy = {
 			description: "支持 {{date}}、{{title}} 和 {{key}} 占位符。",
 			placeholder: "{{date}}_{{title}}",
 		},
-		conversationRoundSeparator: {
-			name: "对话分隔符",
+		sessionRoundSeparator: {
+			name: "会话分隔符",
 			description:
 				"在每个新 USER 轮次前插入。使用 --- 可生成 Markdown 水平线，留空则关闭。",
 			placeholder: "---",

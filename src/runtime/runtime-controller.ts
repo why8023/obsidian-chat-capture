@@ -10,24 +10,24 @@ import { StabilityDetector } from "../capture/stability-detector";
 import type { SnapshotNormalizer } from "../capture/snapshot-normalizer";
 import { DebugDumpWriter } from "../debug/debug-dump";
 import { Logger } from "../debug/logger";
-import { ConversationNoteIndex } from "../persistence/conversation-note-index";
+import { RecordIndex } from "../persistence/record-index";
 import { MarkdownWriter } from "../persistence/markdown-writer";
 import { SessionIndex } from "../persistence/session-index";
 import { MarkdownPostProcessor } from "../post-processing/markdown-post-processor";
 import type {
+	CaptureDiagnostics,
 	CaptureErrorResult,
 	CaptureIdleResult,
 	CaptureRunResult,
-	CaptureDiagnostics,
-	ConversationNoteEntry,
-	ConversationSnapshot,
-	NormalizedSnapshot,
+	NormalizedSessionSnapshot,
 	PluginSettings,
 	PluginStateData,
+	RecordEntry,
 	RuntimeState,
 	ScriptExecutionResult,
 	SerializedError,
 	SessionIndexEntry,
+	SessionSnapshot,
 	WebviewActivityEvent,
 	WebviewBinding,
 } from "../types";
@@ -52,7 +52,7 @@ interface RuntimeControllerDeps {
 	state: () => PluginStateData;
 	persistState: () => Promise<void>;
 	viewerManager: ViewerManager;
-	noteIndex: ConversationNoteIndex;
+	recordIndex: RecordIndex;
 	sessionIndex: SessionIndex;
 	markdownWriter: MarkdownWriter;
 	postProcessor: MarkdownPostProcessor;
@@ -77,7 +77,7 @@ interface PreparedCaptureContext {
 }
 
 interface CollectedSnapshotContext extends PreparedCaptureContext {
-	normalized: NormalizedSnapshot;
+	normalized: NormalizedSessionSnapshot;
 }
 
 type CollectedSnapshotResult =
@@ -94,7 +94,7 @@ type CollectedSnapshotResult =
 type CurrentSnapshotResult =
 	| {
 			status: "ok";
-			snapshot: NormalizedSnapshot;
+			snapshot: NormalizedSessionSnapshot;
 	  }
 	| CaptureIdleResult
 	| CaptureErrorResult;
@@ -207,7 +207,9 @@ export class RuntimeController {
 		return this.captureOnce(true);
 	}
 
-	async saveCollectedSnapshot(snapshot: NormalizedSnapshot): Promise<CaptureRunResult> {
+	async saveCollectedSnapshot(
+		snapshot: NormalizedSessionSnapshot,
+	): Promise<CaptureRunResult> {
 		return this.persistSnapshot(snapshot);
 	}
 
@@ -387,7 +389,7 @@ export class RuntimeController {
 
 			if (!stability.readyToPersist) {
 				this.logDebug("Capture waiting for stability", {
-					conversationKey: normalized.conversationKey,
+					sessionKey: normalized.sessionKey,
 					reason: stability.reason,
 					messageCount: normalized.messages.length,
 				});
@@ -401,15 +403,15 @@ export class RuntimeController {
 
 			if (
 				!forcePersist &&
-				!this.hasStableConversationIdentity(normalized) &&
-				!this.deps.noteIndex.findMatch(normalized) &&
+				!this.hasStableSessionIdentity(normalized) &&
+				!this.deps.recordIndex.findMatch(normalized) &&
 				!this.deps.sessionIndex.findMatch(normalized)
 			) {
 				nextDelay = Math.min(this.deps.settings().pollIntervalMs, 1_000);
-				const statusMessage = formatObarUiText("waiting for conversation id");
+				const statusMessage = formatObarUiText("waiting for session id");
 				this.deps.onStatusChange(statusMessage);
 				return this.reportResult({
-					status: "waiting-for-conversation-id",
+					status: "waiting-for-session-id",
 					statusMessage,
 				});
 			}
@@ -442,9 +444,7 @@ export class RuntimeController {
 						}
 					: null,
 				diagnostics:
-					error instanceof CaptureScriptError
-						? error.diagnostics
-						: diagnostics,
+					error instanceof CaptureScriptError ? error.diagnostics : diagnostics,
 			};
 			this.deps.logger.error("Capture tick failed", errorContext);
 			await this.deps.debugDump.writeRuntimeState({
@@ -503,7 +503,7 @@ export class RuntimeController {
 	): Promise<CollectedSnapshotResult> {
 		const collectResult =
 			await context.binding.webview.executeJavaScript<
-				ScriptExecutionResult<ConversationSnapshot | null>
+				ScriptExecutionResult<SessionSnapshot | null>
 			>(COLLECT_SNAPSHOT_SCRIPT);
 		const rawSnapshot = this.unwrapScriptResult(collectResult);
 		const diagnostics = collectResult.diagnostics;
@@ -596,23 +596,23 @@ export class RuntimeController {
 	}
 
 	private async persistSnapshot(
-		normalized: NormalizedSnapshot,
+		normalized: NormalizedSessionSnapshot,
 	): Promise<CaptureRunResult> {
 		this.setRuntimeState("saving");
-		const existingNote = this.deps.noteIndex.findMatch(normalized);
-		const existingEntry = this.reconcileSessionEntryWithNote(
+		const existingRecord = this.deps.recordIndex.findMatch(normalized);
+		const existingEntry = this.reconcileSessionEntryWithRecord(
 			this.deps.sessionIndex.findMatch(normalized),
-			existingNote,
+			existingRecord,
 		);
 		const knownFilePaths = this.getKnownFilePaths();
 		const filePath =
 			existingEntry?.filePath ??
-			existingNote?.filePath ??
+			existingRecord?.filePath ??
 			(await this.deps.markdownWriter.resolveFilePath(normalized, knownFilePaths));
-		const merge = this.deps.sessionIndex.prepare(normalized, filePath, existingNote);
+		const merge = this.deps.sessionIndex.prepare(normalized, filePath, existingRecord);
 		if (merge.skipReason) {
 			this.deps.logger.warn("Skipped regressive snapshot", {
-				conversationKey: normalized.conversationKey,
+				sessionKey: normalized.sessionKey,
 				reason: merge.skipReason,
 			});
 			const statusMessage = formatObarUiText("skipped regressive snapshot");
@@ -637,22 +637,23 @@ export class RuntimeController {
 						...merge.entry,
 						createdAt:
 							existingEntry?.createdAt ??
-							existingNote?.createdAt ??
+							existingRecord?.createdAt ??
 							merge.entry.createdAt,
 						updatedAt:
 							existingEntry?.updatedAt ??
-							existingNote?.updatedAt ??
+							existingRecord?.updatedAt ??
 							merge.entry.updatedAt,
 						lastStableMessageCount:
 							existingEntry?.lastStableMessageCount ??
-							existingNote?.messageCount ??
+							existingRecord?.messageCount ??
 							merge.entry.lastStableMessageCount,
 					}
 				: merge.entry;
 		let writtenFile: TFile | null = null;
 
 		if (merge.changed || rewriteFrontmatterTimestamps || rewriteMissingFile) {
-			const previousTitle = existingEntry?.title ?? existingNote?.title;
+			const previousTitle =
+				existingEntry?.sessionTitle ?? existingRecord?.sessionTitle;
 			persistedEntry = {
 				...persistedEntry,
 				filePath: await this.deps.markdownWriter.reconcileManagedFilePath(
@@ -666,10 +667,10 @@ export class RuntimeController {
 				normalized,
 				persistedEntry,
 			);
-			this.deps.noteIndex.upsertFromSnapshot(normalized, persistedEntry);
+			this.deps.recordIndex.upsertFromSession(normalized, persistedEntry);
 			if (rewriteMissingFile) {
-				this.deps.logger.info("Conversation note restored after missing file", {
-					conversationKey: normalized.conversationKey,
+				this.deps.logger.info("Record restored after missing file", {
+					sessionKey: normalized.sessionKey,
 					filePath: persistedEntry.filePath,
 				});
 			}
@@ -678,13 +679,8 @@ export class RuntimeController {
 			await this.deps.sessionIndex.commit(persistedEntry, merge.replacedKeys);
 		}
 		if (merge.changed && writtenFile) {
-			const noteOpenedByPostProcessor = await this.deps.postProcessor.run(
-				writtenFile,
-			);
-			if (
-				this.deps.settings().openNoteAfterSave &&
-				!noteOpenedByPostProcessor
-			) {
+			const noteOpenedByPostProcessor = await this.deps.postProcessor.run(writtenFile);
+			if (this.deps.settings().openNoteAfterSave && !noteOpenedByPostProcessor) {
 				await this.deps.openNote(writtenFile);
 			}
 		}
@@ -702,7 +698,7 @@ export class RuntimeController {
 				messageCount: persistedEntry.lastStableMessageCount,
 				created: merge.created,
 				newMessageCount: merge.newMessages.length,
-				title: persistedEntry.title,
+				sessionTitle: persistedEntry.sessionTitle,
 			};
 		}
 
@@ -716,7 +712,7 @@ export class RuntimeController {
 
 	private getKnownFilePaths(): string[] {
 		return [
-			...this.deps.noteIndex.filePaths(),
+			...this.deps.recordIndex.filePaths(),
 			...this.deps.sessionIndex
 				.entries()
 				.map((entry) => entry.filePath)
@@ -869,9 +865,9 @@ export class RuntimeController {
 		}
 
 		if (
-			health.pageState === "conversation" &&
-			this.hasStableConversationIdentity({ pageUrl: health.url }) &&
-			!this.deps.noteIndex.hasConversationForUrl(health.url)
+			health.pageState === "session" &&
+			this.hasStableSessionIdentity({ pageUrl: health.url }) &&
+			!this.deps.recordIndex.hasRecordForUrl(health.url)
 		) {
 			return true;
 		}
@@ -883,28 +879,28 @@ export class RuntimeController {
 		return Math.max(this.deps.settings().pollIntervalMs * 10, 15_000);
 	}
 
-	private hasStableConversationIdentity(snapshot: {
-		conversationId?: string;
+	private hasStableSessionIdentity(snapshot: {
+		sessionId?: string;
 		pageUrl: string;
 	}): boolean {
-		return Boolean(snapshot.conversationId) || /\/c\/[^/?#]+/i.test(snapshot.pageUrl);
+		return Boolean(snapshot.sessionId) || /\/c\/[^/?#]+/i.test(snapshot.pageUrl);
 	}
 
-	private reconcileSessionEntryWithNote(
+	private reconcileSessionEntryWithRecord(
 		entry: SessionIndexEntry | undefined,
-		note: ConversationNoteEntry | undefined,
+		record: RecordEntry | undefined,
 	): SessionIndexEntry | undefined {
-		if (!entry || !note) {
+		if (!entry || !record) {
 			return entry;
 		}
 
 		return {
 			...entry,
-			filePath: note.filePath || entry.filePath,
-			provisionalConversationKey:
-				note.provisionalConversationKey ?? entry.provisionalConversationKey,
-			sourceUrl: note.chatUrl ?? entry.sourceUrl,
-			title: note.title ?? entry.title,
+			filePath: record.filePath || entry.filePath,
+			provisionalSessionKey:
+				record.provisionalSessionKey ?? entry.provisionalSessionKey,
+			sessionUrl: record.sessionUrl ?? entry.sessionUrl,
+			sessionTitle: record.sessionTitle ?? entry.sessionTitle,
 		};
 	}
 

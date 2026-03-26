@@ -1,7 +1,7 @@
 import type {
-	ConversationNoteEntry,
+	RecordEntry,
 	NormalizedMessage,
-	NormalizedSnapshot,
+	NormalizedSessionSnapshot,
 	SessionIndexEntry,
 	SessionMessageIndex,
 } from "../types";
@@ -65,25 +65,22 @@ function compareSessionMatches(left: SessionEntryMatch, right: SessionEntryMatch
 export class SessionIndex {
 	private readonly sessions: Record<string, SessionIndexEntry> = {};
 
-	get(conversationKey: string): SessionIndexEntry | undefined {
-		return this.sessions[conversationKey];
+	get(sessionKey: string): SessionIndexEntry | undefined {
+		return this.sessions[sessionKey];
 	}
 
-	findMatch(snapshot: Pick<
-		NormalizedSnapshot,
-		"conversationKey" | "provisionalConversationKey"
-	>): SessionIndexEntry | undefined {
-		const exactMatch = this.sessions[snapshot.conversationKey];
+	findMatch(snapshot: Pick<NormalizedSessionSnapshot, "sessionKey" | "provisionalSessionKey">): SessionIndexEntry | undefined {
+		const exactMatch = this.sessions[snapshot.sessionKey];
 		if (exactMatch) {
 			return exactMatch;
 		}
 
-		if (!snapshot.provisionalConversationKey) {
+		if (!snapshot.provisionalSessionKey) {
 			return undefined;
 		}
 
-		const provisionalMatches = this.findMatchesByProvisionalConversationKey(
-			snapshot.provisionalConversationKey,
+		const provisionalMatches = this.findMatchesByProvisionalSessionKey(
+			snapshot.provisionalSessionKey,
 		);
 		if (provisionalMatches.length !== 1) {
 			return undefined;
@@ -107,9 +104,9 @@ export class SessionIndex {
 		}
 	}
 
-	private findMatchesBySourceUrl(sourceUrl: string): SessionEntryMatch[] {
+	private findMatchesBySessionUrl(sessionUrl: string): SessionEntryMatch[] {
 		return Object.entries(this.sessions)
-			.filter(([, entry]) => entry.sourceUrl === sourceUrl)
+			.filter(([, entry]) => entry.sessionUrl === sessionUrl)
 			.map(([key, entry]) => ({ key, entry }))
 			.sort(compareSessionMatches);
 	}
@@ -121,73 +118,72 @@ export class SessionIndex {
 			.sort(compareSessionMatches);
 	}
 
-	private findMatchesByProvisionalConversationKey(
-		provisionalConversationKey: string,
+	private findMatchesByProvisionalSessionKey(
+		provisionalSessionKey: string,
 	): SessionEntryMatch[] {
 		return Object.entries(this.sessions)
 			.filter(
-				([, entry]) =>
-					entry.provisionalConversationKey === provisionalConversationKey,
+				([, entry]) => entry.provisionalSessionKey === provisionalSessionKey,
 			)
 			.map(([key, entry]) => ({ key, entry }))
 			.sort(compareSessionMatches);
 	}
 
-	private createEntryFromNote(
-		note: ConversationNoteEntry,
-		snapshot: NormalizedSnapshot,
+	private createEntryFromRecord(
+		record: RecordEntry,
+		snapshot: NormalizedSessionSnapshot,
 		filePath: string,
 	): SessionIndexEntry {
 		return {
-			conversationKey: snapshot.conversationKey,
-			provisionalConversationKey:
-				note.provisionalConversationKey ?? snapshot.provisionalConversationKey,
-			filePath: note.filePath || filePath,
-			sourceUrl: note.chatUrl ?? snapshot.pageUrl,
-			title: note.title ?? snapshot.conversationTitle,
-			createdAt: note.createdAt ?? snapshot.capturedAt,
-			updatedAt: note.updatedAt ?? snapshot.capturedAt,
-			lastStableMessageCount: note.messageCount ?? 0,
+			sessionKey: snapshot.sessionKey,
+			provisionalSessionKey:
+				record.provisionalSessionKey ?? snapshot.provisionalSessionKey,
+			filePath: record.filePath || filePath,
+			sessionUrl: record.sessionUrl ?? snapshot.pageUrl,
+			sessionTitle: record.sessionTitle ?? snapshot.sessionTitle,
+			createdAt: record.createdAt ?? snapshot.capturedAt,
+			updatedAt: record.updatedAt ?? snapshot.capturedAt,
+			lastStableMessageCount: record.messageCount ?? 0,
 			lastSnapshotHash: "",
 			messages: [],
 		};
 	}
 
 	prepare(
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		filePath: string,
-		existingNote?: ConversationNoteEntry,
+		existingRecord?: RecordEntry,
 	): PreparedSessionMerge {
-		const exactMatch = this.sessions[snapshot.conversationKey];
+		const exactMatch = this.sessions[snapshot.sessionKey];
 		const filePathMatches = this.findMatchesByFilePath(filePath);
-		const sourceUrlMatches = this.findMatchesBySourceUrl(snapshot.pageUrl);
-		const provisionalMatches = snapshot.provisionalConversationKey
-			? this.findMatchesByProvisionalConversationKey(
-					snapshot.provisionalConversationKey,
-				)
+		const sessionUrlMatches = this.findMatchesBySessionUrl(snapshot.pageUrl);
+		const provisionalMatches = snapshot.provisionalSessionKey
+			? this.findMatchesByProvisionalSessionKey(snapshot.provisionalSessionKey)
 			: [];
 		const provisionalMatch =
 			provisionalMatches.length === 1 ? provisionalMatches[0] : undefined;
 		const existingMatch = exactMatch
-			? { key: snapshot.conversationKey, entry: exactMatch }
-			: provisionalMatch ?? filePathMatches[0] ?? sourceUrlMatches[0];
+			? { key: snapshot.sessionKey, entry: exactMatch }
+			: provisionalMatch ?? filePathMatches[0] ?? sessionUrlMatches[0];
 		const existing =
 			existingMatch?.entry ??
-			(existingNote ? this.createEntryFromNote(existingNote, snapshot, filePath) : undefined);
+			(existingRecord
+				? this.createEntryFromRecord(existingRecord, snapshot, filePath)
+				: undefined);
 		const replacedKeys = [
 			...filePathMatches,
-			...sourceUrlMatches,
+			...sessionUrlMatches,
 			...provisionalMatches,
 		]
 			.map((match) => match.key)
-			.filter((key) => key !== snapshot.conversationKey)
+			.filter((key) => key !== snapshot.sessionKey)
 			.filter((key, index, keys) => keys.indexOf(key) === index);
 		const nextEntry: SessionIndexEntry = {
-			conversationKey: snapshot.conversationKey,
-			provisionalConversationKey: snapshot.provisionalConversationKey,
+			sessionKey: snapshot.sessionKey,
+			provisionalSessionKey: snapshot.provisionalSessionKey,
 			filePath: existing?.filePath ?? filePath,
-			sourceUrl: snapshot.pageUrl,
-			title: snapshot.conversationTitle,
+			sessionUrl: snapshot.pageUrl,
+			sessionTitle: snapshot.sessionTitle,
 			createdAt: existing?.createdAt ?? snapshot.capturedAt,
 			updatedAt: snapshot.capturedAt,
 			lastStableMessageCount: snapshot.messages.length,
@@ -208,9 +204,9 @@ export class SessionIndex {
 
 		if (
 			existing.lastSnapshotHash === nextEntry.lastSnapshotHash &&
-			existing.title === nextEntry.title &&
-			existing.sourceUrl === nextEntry.sourceUrl &&
-			existing.provisionalConversationKey === nextEntry.provisionalConversationKey
+			existing.sessionTitle === nextEntry.sessionTitle &&
+			existing.sessionUrl === nextEntry.sessionUrl &&
+			existing.provisionalSessionKey === nextEntry.provisionalSessionKey
 		) {
 			return {
 				entry: nextEntry,
@@ -226,10 +222,9 @@ export class SessionIndex {
 			return {
 				entry: {
 					...existing,
-					conversationKey: snapshot.conversationKey,
-					provisionalConversationKey:
-						snapshot.provisionalConversationKey ??
-						existing.provisionalConversationKey,
+					sessionKey: snapshot.sessionKey,
+					provisionalSessionKey:
+						snapshot.provisionalSessionKey ?? existing.provisionalSessionKey,
 				},
 				changed: false,
 				created: false,
@@ -255,10 +250,10 @@ export class SessionIndex {
 
 	async commit(entry: SessionIndexEntry, replacedKeys: string[] = []): Promise<void> {
 		for (const key of replacedKeys) {
-			if (key !== entry.conversationKey) {
+			if (key !== entry.sessionKey) {
 				delete this.sessions[key];
 			}
 		}
-		this.sessions[entry.conversationKey] = entry;
+		this.sessions[entry.sessionKey] = entry;
 	}
 }

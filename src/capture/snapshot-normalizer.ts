@@ -3,10 +3,10 @@ import { OBAR_CAPTURE_SOURCE } from "../constants";
 import { DefuddleAdapter } from "./defuddle-adapter";
 import type {
 	ChatMessageRole,
-	ConversationSnapshot,
 	NormalizedMessage,
-	NormalizedSnapshot,
 	PageState,
+	NormalizedSessionSnapshot,
+	SessionSnapshot,
 	TurnActionFlags,
 } from "../types";
 
@@ -51,7 +51,7 @@ function normalizePageState(state: string | undefined): PageState {
 	switch (state) {
 		case "login":
 		case "chat-list":
-		case "conversation":
+		case "session":
 			return state;
 		default:
 			return "unknown";
@@ -65,8 +65,8 @@ function normalizeActionFlags(flags?: Partial<TurnActionFlags>): TurnActionFlags
 	};
 }
 
-function extractConversationId(snapshot: ConversationSnapshot): string {
-	const direct = normalizeText(snapshot.conversationId);
+function extractSessionId(snapshot: SessionSnapshot): string {
+	const direct = normalizeText(snapshot.sessionId);
 	if (direct) {
 		return direct;
 	}
@@ -75,27 +75,27 @@ function extractConversationId(snapshot: ConversationSnapshot): string {
 	return normalizeText(match?.[1] ?? "");
 }
 
-function buildProvisionalConversationKey(
+function buildProvisionalSessionKey(
 	anchorTextHash: string | undefined,
 ): string | undefined {
 	const normalized = normalizeText(anchorTextHash);
-	return normalized ? hashString(`provisional-conversation|${normalized}`) : undefined;
+	return normalized ? hashString(`provisional-session|${normalized}`) : undefined;
 }
 
-function normalizeConversationTitle(snapshot: ConversationSnapshot, firstUserText: string): string {
+function normalizeSessionTitle(snapshot: SessionSnapshot, firstUserText: string): string {
 	const pageTitle = normalizeText(snapshot.pageTitle.replace(/\s+-\s+ChatGPT$/i, ""));
 	return (
-		normalizeText(snapshot.conversationTitle) ||
+		normalizeText(snapshot.sessionTitle) ||
 		pageTitle ||
 		normalizeText(firstUserText).slice(0, 80) ||
-		"Untitled conversation"
+		"Untitled session"
 	);
 }
 
 export class SnapshotNormalizer {
 	constructor(private readonly defuddleAdapter = new DefuddleAdapter()) {}
 
-	async normalize(snapshot: ConversationSnapshot): Promise<NormalizedSnapshot> {
+	async normalize(snapshot: SessionSnapshot): Promise<NormalizedSessionSnapshot> {
 		const normalizedMessages: NormalizedMessage[] = [];
 
 		for (const [index, turn] of snapshot.turns.entries()) {
@@ -136,23 +136,23 @@ export class SnapshotNormalizer {
 		}
 
 		const firstUserMessage = normalizedMessages.find((message) => message.role === "user");
-		const conversationTitle = normalizeConversationTitle(
+		const sessionTitle = normalizeSessionTitle(
 			snapshot,
 			firstUserMessage?.text ?? "",
 		);
-		const conversationId = extractConversationId(snapshot);
+		const sessionId = extractSessionId(snapshot);
 		const anchorMessage = firstUserMessage ?? normalizedMessages[0];
-		const provisionalConversationKey = buildProvisionalConversationKey(
+		const provisionalSessionKey = buildProvisionalSessionKey(
 			anchorMessage?.textHash,
 		);
 		const firstUserTextHash = firstUserMessage?.textHash ?? "";
-		const conversationKey = conversationId
-			? hashString(`conversation-id|${conversationId}`)
-			: provisionalConversationKey ??
-				hashString(`${snapshot.pageUrl}|${conversationTitle}|${firstUserTextHash}`);
+		const sessionKey = sessionId
+			? hashString(`session-id|${sessionId}`)
+			: provisionalSessionKey ??
+				hashString(`${snapshot.pageUrl}|${sessionTitle}|${firstUserTextHash}`);
 		const snapshotHash = hashString(
 			[
-				conversationKey,
+				sessionKey,
 				snapshot.pageUrl,
 				...normalizedMessages.map(
 					(message) => `${message.uid}|${message.textHash}|${message.domKey}`,
@@ -164,10 +164,10 @@ export class SnapshotNormalizer {
 		return {
 			source: OBAR_CAPTURE_SOURCE,
 			extractorVersion: snapshot.extractorVersion,
-			conversationId: conversationId || undefined,
-			conversationKey,
-			provisionalConversationKey,
-			conversationTitle,
+			sessionId: sessionId || undefined,
+			sessionKey,
+			provisionalSessionKey,
+			sessionTitle,
 			pageUrl: snapshot.pageUrl,
 			pageTitle: normalizeText(snapshot.pageTitle),
 			capturedAt: Number.isNaN(capturedAt) ? Date.now() : capturedAt,

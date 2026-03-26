@@ -1,11 +1,11 @@
 import { normalizePath } from "obsidian";
 import { resolveSaveFolderForUrl } from "../settings/chat-targets";
-import type { NormalizedSnapshot, PluginSettings } from "../types";
+import type { NormalizedSessionSnapshot, PluginSettings } from "../types";
 import { formatLocalDate } from "./date-format";
 
-export type ConversationFilePathSource = Pick<
-	NormalizedSnapshot,
-	"capturedAt" | "conversationKey" | "conversationTitle" | "pageTitle" | "pageUrl"
+export type RecordFilePathSource = Pick<
+	NormalizedSessionSnapshot,
+	"capturedAt" | "sessionKey" | "sessionTitle" | "pageTitle" | "pageUrl"
 >;
 
 export function sanitizeFileSegment(value: string): string {
@@ -13,19 +13,19 @@ export function sanitizeFileSegment(value: string): string {
 		.replace(/[\\/:*?"<>|#%&{}$!'@+=`]/g, " ")
 		.replace(/\s+/g, " ")
 		.trim();
-	return sanitized || "Untitled conversation";
+	return sanitized || "Untitled session";
 }
 
-export function buildConversationFilePath(
+export function buildRecordFilePath(
 	settings: PluginSettings,
-	snapshot: ConversationFilePathSource,
+	snapshot: RecordFilePathSource,
 	suffix = "",
 ): string {
 	const saveFolder = resolveSaveFolderForUrl(settings, snapshot.pageUrl);
 	const date = formatLocalDate(snapshot.capturedAt);
-	const shortKey = snapshot.conversationKey.slice(0, 8);
+	const shortKey = snapshot.sessionKey.slice(0, 8);
 	const title = sanitizeFileSegment(
-		snapshot.conversationTitle || snapshot.pageTitle || shortKey,
+		snapshot.sessionTitle || snapshot.pageTitle || shortKey,
 	).slice(0, 80);
 
 	const base = settings.fileNameTemplate

@@ -1,6 +1,6 @@
 export function buildPageProbeSource(): string {
 	return `
-  function getDocumentConversationTitle() {
+  function getDocumentSessionTitle() {
     const normalized = normalizeText(document.title.replace(/\\s+-\\s+ChatGPT$/i, ""));
     if (!normalized || /^chatgpt$/i.test(normalized)) {
       return "";
@@ -8,7 +8,7 @@ export function buildPageProbeSource(): string {
     return normalized;
   }
 
-  function getConversationIdFromUrl() {
+  function getSessionIdFromUrl() {
     const match = location.pathname.match(/\\/c\\/([^/?#]+)/i);
     return normalizeText(match?.[1] ?? "");
   }
@@ -21,7 +21,7 @@ export function buildPageProbeSource(): string {
       return "login";
     }
     if (turns.length > 0) {
-      return "conversation";
+      return "session";
     }
     if (document.querySelector("nav a[href*='/c/']")) {
       return "chat-list";

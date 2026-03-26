@@ -320,7 +320,7 @@ export function renderCustomNoteBlock(
 	}<!-- ${CUSTOM_NOTE_END_MARKER}:${id}-->`;
 }
 
-export function mergeConversationMarkdownWithCustomNotes(options: {
+export function mergeRecordMarkdownWithCustomNotes(options: {
 	existingContent: string;
 	renderedContent: string;
 }): string {

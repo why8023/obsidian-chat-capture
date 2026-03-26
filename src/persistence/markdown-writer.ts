@@ -1,15 +1,19 @@
 import { TFile, type App } from "obsidian";
 import { Logger } from "../debug/logger";
-import type { NormalizedSnapshot, PluginSettings, SessionIndexEntry } from "../types";
+import type {
+	NormalizedSessionSnapshot,
+	PluginSettings,
+	SessionIndexEntry,
+} from "../types";
 import {
-	buildConversationFilePath,
-	type ConversationFilePathSource,
+	buildRecordFilePath,
+	type RecordFilePathSource,
 } from "./file-path";
-import { mergeConversationMarkdownWithCustomNotes } from "./custom-note-blocks";
-import { renderConversationMarkdown } from "./frontmatter";
+import { mergeRecordMarkdownWithCustomNotes } from "./custom-note-blocks";
+import { renderRecordMarkdown } from "./frontmatter";
 
 const UTC_FRONTMATTER_TIMESTAMP_PATTERN =
-	/^(?:obar_created_at|obar_updated_at|created_at|updated_at):\s*(?:"[^"\n]*Z"|[^"\n]*Z)\s*$/m;
+	/^(?:obar_record_created_at|obar_record_updated_at|obar_created_at|obar_updated_at|created_at|updated_at):\s*(?:"[^"\n]*Z"|[^"\n]*Z)\s*$/m;
 
 function appendSuffixToPath(path: string, suffix: string): string {
 	return path.replace(/\.md$/i, ` ${suffix}.md`);
@@ -35,14 +39,14 @@ export class MarkdownWriter {
 	}
 
 	async resolveFilePath(
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		existingPaths: string[],
 	): Promise<string> {
 		return this.resolveAvailableFilePath(snapshot, existingPaths);
 	}
 
 	async reconcileManagedFilePath(
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		entry: SessionIndexEntry,
 		previousTitle: string | undefined,
 		existingPaths: string[],
@@ -65,7 +69,7 @@ export class MarkdownWriter {
 
 		const nextPath = this.resolveAvailableFilePath(snapshot, existingPaths, {
 			capturedAt: entry.createdAt,
-			title: snapshot.conversationTitle,
+			title: snapshot.sessionTitle,
 			preferredSuffix: suffix,
 			ignorePath: currentPath,
 		});
@@ -75,30 +79,30 @@ export class MarkdownWriter {
 
 		await this.ensureFolder(nextPath);
 		await this.app.fileManager.renameFile(existing, nextPath);
-		this.logger.info("Conversation note renamed", {
+		this.logger.info("Record renamed", {
 			from: currentPath,
 			to: nextPath,
-			title: snapshot.conversationTitle,
+			sessionTitle: snapshot.sessionTitle,
 		});
 		return nextPath;
 	}
 
 	async writeSnapshot(
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		entry: SessionIndexEntry,
 	): Promise<TFile> {
-		const content = renderConversationMarkdown(snapshot, entry, this.getSettings());
+		const content = renderRecordMarkdown(snapshot, entry, this.getSettings());
 		await this.ensureFolder(entry.filePath);
 
 		const existing = this.app.vault.getAbstractFileByPath(entry.filePath);
 		if (existing instanceof TFile) {
 			await this.app.vault.process(existing, (current) =>
-				mergeConversationMarkdownWithCustomNotes({
+				mergeRecordMarkdownWithCustomNotes({
 					existingContent: current,
 					renderedContent: content,
 				}),
 			);
-			this.logger.info("Conversation note written", {
+			this.logger.info("Record written", {
 				filePath: entry.filePath,
 				messageCount: entry.lastStableMessageCount,
 			});
@@ -107,7 +111,7 @@ export class MarkdownWriter {
 
 		const file = await this.app.vault.create(entry.filePath, content);
 
-		this.logger.info("Conversation note written", {
+		this.logger.info("Record written", {
 			filePath: entry.filePath,
 			messageCount: entry.lastStableMessageCount,
 		});
@@ -142,7 +146,7 @@ export class MarkdownWriter {
 	}
 
 	private resolveAvailableFilePath(
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		existingPaths: string[],
 		options?: {
 			capturedAt?: number;
@@ -156,19 +160,22 @@ export class MarkdownWriter {
 		);
 		const source = this.createPathSource(
 			snapshot,
-			options?.title ?? snapshot.conversationTitle,
+			options?.title ?? snapshot.sessionTitle,
 			options?.capturedAt ?? snapshot.capturedAt,
 		);
-		const basePath = buildConversationFilePath(this.getSettings(), source);
+		const basePath = buildRecordFilePath(this.getSettings(), source);
 		const preferredPath =
 			options?.preferredSuffix !== undefined
-				? buildConversationFilePath(this.getSettings(), source, options.preferredSuffix)
+				? buildRecordFilePath(this.getSettings(), source, options.preferredSuffix)
 				: basePath;
 
 		if (this.isPathAvailable(preferredPath, reservedPaths, options?.ignorePath)) {
 			return preferredPath;
 		}
-		if (preferredPath !== basePath && this.isPathAvailable(basePath, reservedPaths, options?.ignorePath)) {
+		if (
+			preferredPath !== basePath &&
+			this.isPathAvailable(basePath, reservedPaths, options?.ignorePath)
+		) {
 			return basePath;
 		}
 
@@ -177,8 +184,8 @@ export class MarkdownWriter {
 			attempt += 1;
 			const suffix =
 				attempt === 1
-					? snapshot.conversationKey.slice(0, 8)
-					: `${snapshot.conversationKey.slice(0, 8)}-${attempt}`;
+					? snapshot.sessionKey.slice(0, 8)
+					: `${snapshot.sessionKey.slice(0, 8)}-${attempt}`;
 			const candidate = appendSuffixToPath(basePath, suffix);
 			if (this.isPathAvailable(candidate, reservedPaths, options?.ignorePath)) {
 				return candidate;
@@ -201,7 +208,7 @@ export class MarkdownWriter {
 
 	private extractManagedSuffix(
 		currentPath: string,
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		title: string | undefined,
 		capturedAt: number,
 	): string | null {
@@ -222,11 +229,11 @@ export class MarkdownWriter {
 
 	private extractManagedSuffixForTitle(
 		currentPath: string,
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		title: string,
 		capturedAt: number,
 	): string | null {
-		const basePath = buildConversationFilePath(
+		const basePath = buildRecordFilePath(
 			this.getSettings(),
 			this.createPathSource(snapshot, title, capturedAt),
 		);
@@ -237,7 +244,7 @@ export class MarkdownWriter {
 		const suffixMatch = stripMarkdownExtension(currentPath).match(
 			new RegExp(
 				`^${escapeRegExp(stripMarkdownExtension(basePath))} (${escapeRegExp(
-					snapshot.conversationKey.slice(0, 8),
+					snapshot.sessionKey.slice(0, 8),
 				)}(?:-\\d+)?)$`,
 			),
 		);
@@ -246,12 +253,12 @@ export class MarkdownWriter {
 
 	private extractManagedSuffixFromTemplate(
 		currentPath: string,
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		capturedAt: number,
 	): string | null {
 		const titleMarker = "OBARTITLEMARKER";
 		const managedSuffixPattern = `${escapeRegExp(
-			snapshot.conversationKey.slice(0, 8),
+			snapshot.sessionKey.slice(0, 8),
 		)}(?:-\\d+)?`;
 		const currentBasePath = stripMarkdownExtension(currentPath);
 		const collisionMatch = currentBasePath.match(
@@ -263,7 +270,7 @@ export class MarkdownWriter {
 			return null;
 		}
 
-		const templatePath = buildConversationFilePath(
+		const templatePath = buildRecordFilePath(
 			this.getSettings(),
 			this.createPathSource(snapshot, titleMarker, capturedAt),
 		);
@@ -289,14 +296,14 @@ export class MarkdownWriter {
 	}
 
 	private createPathSource(
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		title: string,
 		capturedAt: number,
-	): ConversationFilePathSource {
+	): RecordFilePathSource {
 		return {
 			capturedAt,
-			conversationKey: snapshot.conversationKey,
-			conversationTitle: title,
+			sessionKey: snapshot.sessionKey,
+			sessionTitle: title,
 			pageTitle: snapshot.pageTitle,
 			pageUrl: snapshot.pageUrl,
 		};

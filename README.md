@@ -1,16 +1,16 @@
 # OBAR
 
-将 Obsidian 内置 **Web Viewer** 里的 ChatGPT 对话抓取为 Markdown 笔记，并持续增量更新。
+将 Obsidian 内置 **Web Viewer** 里的 ChatGPT `session` 抓取为 Markdown `record`，并持续增量更新。
 
 当前实现不是浏览器扩展，也不是通过网络 API 拉取聊天记录，而是由插件在 Obsidian 桌面端绑定一个 ChatGPT Web Viewer，向其中注入轻量采集脚本，在页面内只维护“消息壳 + 内容 HTML”快照，再由宿主用低频心跳拉取结果，并在插件侧用 Defuddle 清洗成最终 Markdown 后写回文件。
 
 ## 功能概览
 
 - 打开或绑定一个 ChatGPT Web Viewer 标签页
-- 自动监控当前会话内容，并在变化时增量采集
+- 自动监控当前 `session` 内容，并在变化时增量采集
 - 优先根据回复完成动作判定 Assistant 已完成，并保留文本判稳兜底，避免流式输出过程中频繁覆盖
-- 将每个会话保存为独立 Markdown 文件
-- 通过 Markdown frontmatter + 内存会话缓存做增量更新，避免重复写入
+- 将每个 `session` 保存为独立 Markdown `record`
+- 通过 Markdown frontmatter + 内存 `session` 缓存做增量更新，避免重复写入
 - 支持在记录文件中插入自定义 note 区域，并在后续更新时保留这些用户内容
 - 提供日志、原始快照和运行时诊断，便于调试 DOM 选择器或 Web Viewer 问题
 
@@ -29,7 +29,7 @@
 - `src/runtime/`
   负责自动采集主循环，包括绑定、注入、健康检查、事件驱动调度、回退重试、状态切换。
 - `src/persistence/`
-  负责文件路径生成、frontmatter 渲染、Markdown 写入、基于笔记元数据的会话索引维护。
+  负责文件路径生成、frontmatter 渲染、Markdown 写入、基于 record 元数据的索引维护。
 - `src/debug/`
   负责内存日志和调试快照落盘。
 - `src/settings/`
@@ -40,7 +40,7 @@
 插件启动后的主流程如下：
 
 1. `onload()` 读取 `data.json`，恢复设置和少量运行偏好。
-2. 初始化 `Logger`、`DebugDumpWriter`、`ConversationNoteIndex`、`SessionIndex`、`MarkdownWriter`、`ViewerManager`、`RuntimeController`。
+2. 初始化 `Logger`、`DebugDumpWriter`、`RecordIndex`、`SessionIndex`、`MarkdownWriter`、`ViewerManager`、`RuntimeController`。
 3. 注册命令、Ribbon 图标、设置页，以及 `active-leaf-change` 和 `layout-change` 监听。
 4. 启动时扫描保存目录中的 Markdown 笔记，并通过 `MetadataCache` / `Vault` 事件持续维护内存索引。
 5. 如果开启了 `autoCapture` 且没有暂停，运行时控制器开始低频心跳，并在页面变化、导航、重新激活时立即补采。
@@ -95,7 +95,7 @@
 `src/capture/` 现在拆成了更清晰的两层：
 
 - 页面侧
-  - `page-probe.ts` 负责判断 `pageState`、标题和会话 ID
+  - `page-probe.ts` 负责判断 `pageState`、标题和 `session ID`
   - `turn-shell-collector.ts` 只负责定位消息壳、识别角色、提取 `contentHtml`、动作信号和稳定 `domKey`
 - 插件侧
   - `defuddle-adapter.ts` 用 `defuddle/node` + `linkedom` 把每条消息的 HTML 转成 Markdown
@@ -113,7 +113,7 @@
 - 根据页面结构推断当前页面状态：
   - `login`
   - `chat-list`
-  - `conversation`
+  - `session`
   - `unknown`
 - 在页面内安装 `MutationObserver`
 - DOM 变化后只标记 `dirty`，并通过 debounce + `requestIdleCallback`/`setTimeout` 异步刷新缓存快照
@@ -142,12 +142,12 @@
   - `textHash`
   - `uid`
 - 为整份快照计算：
-  - `conversationKey`
+  - `sessionKey`
   - `snapshotHash`
 
 其中：
 
-- `conversationKey` 用来识别同一会话
+- `sessionKey` 用来识别同一 `session`
 - `uid` 基于 `domKey` 生成，用来识别消息在序列中的稳定身份
 - `textHash` 基于最终 Markdown 生成，用来表示消息内容是否变化
 - `snapshotHash` 用来判断当前快照是否与上次完全一致
@@ -185,8 +185,8 @@
 3. 如果页面标记为 `dirty`、处于判稳阶段，或尚无缓存快照，则执行 `collect`
 4. 归一化并可选写出调试快照
 5. 调用稳定性检测器判断是否可以持久化
-6. 在会话 ID 还没稳定前，自动模式先等待，不立即落盘
-7. 通过 `ConversationNoteIndex` 判断对应笔记是否已存在，再由内存 `SessionIndex` 做本次运行内的增量 / skip / regression 判断
+6. 在 `session ID` 还没稳定前，自动模式先等待，不立即落盘
+7. 通过 `RecordIndex` 判断对应 `record` 是否已存在，再由内存 `SessionIndex` 做本次运行内的增量 / skip / regression 判断
 8. 通过 `MarkdownWriter` 写入 Obsidian Vault
 9. 更新状态栏文本和内部索引
 
@@ -204,23 +204,23 @@
 - 没有活动 ChatGPT Web Viewer 时，自动切回低频后台心跳
 - 设置更新后立即按新参数恢复或暂停采集
 
-### 8. 会话索引与增量更新
+### 8. `Session` 索引与增量更新
 
 当前实现将“长期真相源”和“运行态缓存”拆开：
 
-- `src/persistence/conversation-note-index.ts`
-  - 以保存目录中的 Markdown/frontmatter 作为真相源
-  - 通过 `MetadataCache` / `Vault` 事件维护 `conversationId -> filePath`
+- `src/persistence/record-index.ts`
+  - 以保存目录中的 Markdown/frontmatter `record` 作为真相源
+  - 通过 `MetadataCache` / `Vault` 事件维护 `sessionId -> filePath`
 - `src/persistence/session-index.ts`
   - 只维护本次运行期间的轻量合并缓存
   - 不再持久化到 `data.json`
 
-运行态会话缓存包含：
+运行态 `session` 缓存包含：
 
-- `conversationKey`
+- `sessionKey`
 - `filePath`
-- `sourceUrl`
-- `title`
+- `sessionUrl`
+- `sessionTitle`
 - `createdAt`
 - `updatedAt`
 - `lastStableMessageCount`
@@ -229,7 +229,7 @@
 
 合并策略：
 
-- 以前没见过的会话：新建 Markdown 文件
+- 以前没见过的 `session`：新建 Markdown `record`
 - `snapshotHash` 未变化：跳过写入
 - 新快照比已保存消息更短：跳过，避免回退到旧状态
 - 新快照只是尾部追加：更新文件
@@ -245,9 +245,9 @@
 - 更新时使用单次 `Vault.process()` / `Vault.create()` 写入，避免前后两次写入带来的索引竞态
 - 显式 custom note 区域会在更新时按原位置尽量回填
 - frontmatter 至少包含：
-  - `obar_conversation_id`
-  - `obar_conversation_key`
-  - `obar_chat_url`
+  - `obar_session_id`
+  - `obar_session_key`
+  - `obar_session_url`
 
 文件名生成规则在 `src/persistence/file-path.ts`：
 
@@ -258,20 +258,20 @@
   - `{{title}}`
   - `{{key}}`
 
-如果目标路径已被占用，会自动在文件名后追加会话 key 的短前缀，避免冲突。
+如果目标路径已被占用，会自动在文件名后追加 `session key` 的短前缀，避免冲突。
 
 Markdown 内容由 `src/persistence/frontmatter.ts` 生成，结构如下：
 
 ```md
 ---
 obar_source: "obar-chatgpt-webviewer"
-obar_conversation_key: "..."
-obar_chat_url: "..."
-obar_created_at: "..."
-obar_updated_at: "..."
-obar_message_count: 12
+obar_session_key: "..."
+obar_session_url: "..."
+obar_record_created_at: "..."
+obar_record_updated_at: "..."
+obar_record_message_count: 12
 obar_extractor_version: "0.1.0"
-obar_page_state: "conversation"
+obar_session_state: "session"
 ---
 
 # USER: 帮我总结一下这个插件的存储逻辑
@@ -280,7 +280,7 @@ obar_page_state: "conversation"
 ## 用户正文里的一级标题会自动下调
 ...
 
-# AI: 这个插件会先把页面里的对话轮次归一化，再写入带 frontmatter 的笔记
+# AI: 这个插件会先把页面里的 session 轮次归一化，再写入带 frontmatter 的 record
 ...
 
 ---
@@ -307,7 +307,7 @@ obar_page_state: "conversation"
 
 - Chat targets
 - File name template
-- Conversation separator
+- Session separator
 - Message heading summary length
 - Open note after save
 - Post-processing
@@ -392,6 +392,7 @@ src/
     file-path.ts
     frontmatter.ts
     markdown-writer.ts
+    record-index.ts
     session-index.ts
   runtime/
     runtime-controller.ts
@@ -491,7 +492,7 @@ git push origin main --follow-tags
 - `state`
   - 自动采集是否暂停
 
-会话笔记是否已存在，不再依赖 `data.json` 中的持久化 session 表，而是直接以保存目录中的 Markdown/frontmatter 为准。
+某个 `session` 对应的 `record` 是否已存在，不再依赖 `data.json` 中的持久化 session 表，而是直接以保存目录中的 Markdown/frontmatter 为准。
 
 ## 后续可演进方向
 

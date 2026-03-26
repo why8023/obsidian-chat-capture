@@ -8,14 +8,14 @@ import {
 import { Logger } from "../debug/logger";
 import { getTrackedSaveFolders } from "../settings/chat-targets";
 import type {
-	ConversationNoteEntry,
-	NormalizedSnapshot,
+	NormalizedSessionSnapshot,
 	PluginSettings,
+	RecordEntry,
 	SessionIndexEntry,
 } from "../types";
 import {
-	isSupportedConversationSource,
-	readConversationFrontmatterEntry,
+	isSupportedRecordSource,
+	readRecordFrontmatterEntry,
 } from "./frontmatter";
 
 function normalizeString(value: unknown): string | undefined {
@@ -53,7 +53,7 @@ function parseMessageCount(value: unknown): number | undefined {
 	return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : undefined;
 }
 
-function extractConversationIdFromUrl(url: string | undefined): string | undefined {
+function extractSessionIdFromUrl(url: string | undefined): string | undefined {
 	if (!url) {
 		return undefined;
 	}
@@ -66,7 +66,7 @@ function isMarkdownFile(file: TAbstractFile): file is TFile {
 	return file instanceof TFile && file.extension === "md";
 }
 
-function compareEntries(left: ConversationNoteEntry, right: ConversationNoteEntry): number {
+function compareEntries(left: RecordEntry, right: RecordEntry): number {
 	if ((left.updatedAt ?? 0) !== (right.updatedAt ?? 0)) {
 		return (right.updatedAt ?? 0) - (left.updatedAt ?? 0);
 	}
@@ -79,22 +79,19 @@ function compareEntries(left: ConversationNoteEntry, right: ConversationNoteEntr
 	return left.filePath.localeCompare(right.filePath);
 }
 
-type ConversationIdentityField =
-	| "conversationId"
-	| "conversationKey"
-	| "provisionalConversationKey";
+type SessionIdentityField = "sessionId" | "sessionKey" | "provisionalSessionKey";
 
 interface IdentityIndex {
 	groups: Map<string, Set<string>>;
-	winners: Map<string, ConversationNoteEntry>;
+	winners: Map<string, RecordEntry>;
 	requireUnique: boolean;
 	warnOnDuplicate: boolean;
 }
 
-const IDENTITY_FIELDS: readonly ConversationIdentityField[] = [
-	"conversationId",
-	"conversationKey",
-	"provisionalConversationKey",
+const IDENTITY_FIELDS: readonly SessionIdentityField[] = [
+	"sessionId",
+	"sessionKey",
+	"provisionalSessionKey",
 ];
 
 function createIdentityIndex(
@@ -102,19 +99,19 @@ function createIdentityIndex(
 ): IdentityIndex {
 	return {
 		groups: new Map<string, Set<string>>(),
-		winners: new Map<string, ConversationNoteEntry>(),
+		winners: new Map<string, RecordEntry>(),
 		requireUnique: options?.requireUnique ?? false,
 		warnOnDuplicate: options?.warnOnDuplicate ?? true,
 	};
 }
 
-export class ConversationNoteIndex {
-	private readonly byFilePath = new Map<string, ConversationNoteEntry>();
+export class RecordIndex {
+	private readonly byFilePath = new Map<string, RecordEntry>();
 	private readonly pendingMetadataPaths = new Set<string>();
-	private readonly identityIndexes: Record<ConversationIdentityField, IdentityIndex> = {
-		conversationId: createIdentityIndex(),
-		conversationKey: createIdentityIndex(),
-		provisionalConversationKey: createIdentityIndex({
+	private readonly identityIndexes: Record<SessionIdentityField, IdentityIndex> = {
+		sessionId: createIdentityIndex(),
+		sessionKey: createIdentityIndex(),
+		provisionalSessionKey: createIdentityIndex({
 			requireUnique: true,
 			warnOnDuplicate: false,
 		}),
@@ -135,7 +132,7 @@ export class ConversationNoteIndex {
 			this.reindexFile(file);
 		}
 
-		this.logger.info("Conversation note index rebuilt", {
+		this.logger.info("Record index rebuilt", {
 			count: this.byFilePath.size,
 			pendingMetadataCount: this.pendingMetadataPaths.size,
 			saveFolders: getTrackedSaveFolders(this.getSettings()),
@@ -146,7 +143,7 @@ export class ConversationNoteIndex {
 		return this.pendingMetadataPaths.size > 0;
 	}
 
-	entries(): ConversationNoteEntry[] {
+	entries(): RecordEntry[] {
 		return [...this.byFilePath.values()];
 	}
 
@@ -154,46 +151,37 @@ export class ConversationNoteIndex {
 		return [...this.byFilePath.keys()];
 	}
 
-	findMatch(snapshot: NormalizedSnapshot): ConversationNoteEntry | undefined {
-		if (snapshot.conversationId) {
-			const byConversationId = this.getIdentityWinner(
-				"conversationId",
-				snapshot.conversationId,
-			);
-			if (byConversationId) {
-				return byConversationId;
+	findMatch(snapshot: NormalizedSessionSnapshot): RecordEntry | undefined {
+		if (snapshot.sessionId) {
+			const bySessionId = this.getIdentityWinner("sessionId", snapshot.sessionId);
+			if (bySessionId) {
+				return bySessionId;
 			}
 		}
 
-		const byConversationKey = this.getIdentityWinner(
-			"conversationKey",
-			snapshot.conversationKey,
-		);
-		if (byConversationKey) {
-			return byConversationKey;
+		const bySessionKey = this.getIdentityWinner("sessionKey", snapshot.sessionKey);
+		if (bySessionKey) {
+			return bySessionKey;
 		}
 
-		if (snapshot.provisionalConversationKey) {
+		if (snapshot.provisionalSessionKey) {
 			return this.getIdentityWinner(
-				"provisionalConversationKey",
-				snapshot.provisionalConversationKey,
+				"provisionalSessionKey",
+				snapshot.provisionalSessionKey,
 			);
 		}
 
 		return undefined;
 	}
 
-	hasConversationForUrl(url: string): boolean {
-		const conversationId = extractConversationIdFromUrl(url);
-		if (
-			conversationId &&
-			this.getIdentityWinner("conversationId", conversationId)
-		) {
+	hasRecordForUrl(url: string): boolean {
+		const sessionId = extractSessionIdFromUrl(url);
+		if (sessionId && this.getIdentityWinner("sessionId", sessionId)) {
 			return true;
 		}
 
 		for (const entry of this.byFilePath.values()) {
-			if (entry.chatUrl === url) {
+			if (entry.sessionUrl === url) {
 				return true;
 			}
 		}
@@ -201,14 +189,17 @@ export class ConversationNoteIndex {
 		return false;
 	}
 
-	upsertFromSnapshot(snapshot: NormalizedSnapshot, entry: SessionIndexEntry): void {
+	upsertFromSession(
+		snapshot: NormalizedSessionSnapshot,
+		entry: SessionIndexEntry,
+	): void {
 		this.upsertRecord({
 			filePath: entry.filePath,
-			conversationId: snapshot.conversationId,
-			conversationKey: snapshot.conversationKey,
-			provisionalConversationKey: snapshot.provisionalConversationKey,
-			chatUrl: snapshot.pageUrl,
-			title: snapshot.conversationTitle,
+			sessionId: snapshot.sessionId,
+			sessionKey: snapshot.sessionKey,
+			provisionalSessionKey: snapshot.provisionalSessionKey,
+			sessionUrl: snapshot.pageUrl,
+			sessionTitle: snapshot.sessionTitle,
 			createdAt: entry.createdAt,
 			updatedAt: entry.updatedAt,
 			messageCount: entry.lastStableMessageCount,
@@ -333,59 +324,47 @@ export class ConversationNoteIndex {
 		this.removePath(file.path);
 	}
 
-	private parseRecord(
-		file: TFile,
-		cache: CachedMetadata,
-	): ConversationNoteEntry | null {
+	private parseRecord(file: TFile, cache: CachedMetadata): RecordEntry | null {
 		const frontmatter = cache.frontmatter;
 		if (!frontmatter) {
 			return null;
 		}
 
-		const source = normalizeString(
-			readConversationFrontmatterEntry(frontmatter, "source"),
+		const source = normalizeString(readRecordFrontmatterEntry(frontmatter, "source"));
+		const sessionKey = normalizeString(
+			readRecordFrontmatterEntry(frontmatter, "sessionKey"),
 		);
-		const conversationKey = normalizeString(
-			readConversationFrontmatterEntry(frontmatter, "conversationKey"),
+		const sessionUrl = normalizeString(
+			readRecordFrontmatterEntry(frontmatter, "sessionUrl"),
 		);
-		const chatUrl = normalizeString(
-			readConversationFrontmatterEntry(frontmatter, "chatUrl"),
-		);
-		if (!isSupportedConversationSource(source) || !conversationKey) {
+		if (!isSupportedRecordSource(source) || !sessionKey) {
 			return null;
 		}
 
-		const conversationId =
-			normalizeString(readConversationFrontmatterEntry(frontmatter, "conversationId")) ??
-			extractConversationIdFromUrl(chatUrl);
+		const sessionId =
+			normalizeString(readRecordFrontmatterEntry(frontmatter, "sessionId")) ??
+			extractSessionIdFromUrl(sessionUrl);
 
 		return {
 			filePath: file.path,
-			conversationId,
-			conversationKey,
-			provisionalConversationKey: normalizeString(
-				readConversationFrontmatterEntry(
-					frontmatter,
-					"provisionalConversationKey",
-				),
+			sessionId,
+			sessionKey,
+			provisionalSessionKey: normalizeString(
+				readRecordFrontmatterEntry(frontmatter, "provisionalSessionKey"),
 			),
-			chatUrl,
-			title:
-				normalizeString(readConversationFrontmatterEntry(frontmatter, "title")) ??
+			sessionUrl,
+			sessionTitle:
+				normalizeString(readRecordFrontmatterEntry(frontmatter, "sessionTitle")) ??
 				file.basename,
-			createdAt: parseTimestamp(
-				readConversationFrontmatterEntry(frontmatter, "createdAt"),
-			),
-			updatedAt: parseTimestamp(
-				readConversationFrontmatterEntry(frontmatter, "updatedAt"),
-			),
+			createdAt: parseTimestamp(readRecordFrontmatterEntry(frontmatter, "createdAt")),
+			updatedAt: parseTimestamp(readRecordFrontmatterEntry(frontmatter, "updatedAt")),
 			messageCount: parseMessageCount(
-				readConversationFrontmatterEntry(frontmatter, "messageCount"),
+				readRecordFrontmatterEntry(frontmatter, "messageCount"),
 			),
 		};
 	}
 
-	private upsertRecord(record: ConversationNoteEntry): void {
+	private upsertRecord(record: RecordEntry): void {
 		this.removePath(record.filePath);
 		this.byFilePath.set(record.filePath, record);
 		this.indexRecord(record);
@@ -424,20 +403,20 @@ export class ConversationNoteIndex {
 		}
 	}
 
-	private indexRecord(record: ConversationNoteEntry): void {
+	private indexRecord(record: RecordEntry): void {
 		for (const field of IDENTITY_FIELDS) {
 			this.addIdentityValue(field, record[field], record.filePath);
 		}
 	}
 
-	private deindexRecord(record: ConversationNoteEntry): void {
+	private deindexRecord(record: RecordEntry): void {
 		for (const field of IDENTITY_FIELDS) {
 			this.removeIdentityValue(field, record[field], record.filePath);
 		}
 	}
 
 	private addIdentityValue(
-		field: ConversationIdentityField,
+		field: SessionIdentityField,
 		key: string | undefined,
 		filePath: string,
 	): void {
@@ -453,7 +432,7 @@ export class ConversationNoteIndex {
 	}
 
 	private removeIdentityValue(
-		field: ConversationIdentityField,
+		field: SessionIdentityField,
 		key: string | undefined,
 		filePath: string,
 	): void {
@@ -474,15 +453,12 @@ export class ConversationNoteIndex {
 		this.refreshIdentityWinner(field, key);
 	}
 
-	private refreshIdentityWinner(
-		field: ConversationIdentityField,
-		key: string,
-	): void {
+	private refreshIdentityWinner(field: SessionIdentityField, key: string): void {
 		const index = this.identityIndexes[field];
 		const winnerMap = index.winners;
 		const candidates = [...(index.groups.get(key) ?? [])]
 			.map((filePath) => this.byFilePath.get(filePath))
-			.filter((entry): entry is ConversationNoteEntry => Boolean(entry))
+			.filter((entry): entry is RecordEntry => Boolean(entry))
 			.sort(compareEntries);
 
 		if (candidates.length === 0) {
@@ -507,7 +483,7 @@ export class ConversationNoteIndex {
 			candidates.length > 1 &&
 			(!previous || previous.filePath !== winner.filePath)
 		) {
-			this.logger.warn("Conversation note index found duplicate identities", {
+			this.logger.warn("Record index found duplicate session identities", {
 				field,
 				key,
 				kept: winner.filePath,
@@ -516,10 +492,7 @@ export class ConversationNoteIndex {
 		}
 	}
 
-	private getIdentityWinner(
-		field: ConversationIdentityField,
-		key: string,
-	): ConversationNoteEntry | undefined {
+	private getIdentityWinner(field: SessionIdentityField, key: string): RecordEntry | undefined {
 		return this.identityIndexes[field].winners.get(key);
 	}
 }

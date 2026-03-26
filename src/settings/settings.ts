@@ -26,7 +26,7 @@ function normalizeTemplate(input: string | undefined, fallback: string): string 
 	return template || fallback;
 }
 
-function normalizeConversationRoundSeparator(
+function normalizeSessionRoundSeparator(
 	input: string | undefined,
 	fallback: string,
 ): string {
@@ -58,9 +58,9 @@ export function normalizePluginSettings(
 			data?.fileNameTemplate,
 			DEFAULT_SETTINGS.fileNameTemplate,
 		),
-		conversationRoundSeparator: normalizeConversationRoundSeparator(
-			data?.conversationRoundSeparator,
-			DEFAULT_SETTINGS.conversationRoundSeparator,
+		sessionRoundSeparator: normalizeSessionRoundSeparator(
+			data?.sessionRoundSeparator ?? data?.conversationRoundSeparator,
+			DEFAULT_SETTINGS.sessionRoundSeparator,
 		),
 		messageHeadingSummaryLength: clampInteger(
 			data?.messageHeadingSummaryLength,

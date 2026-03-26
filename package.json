@@ -1,7 +1,7 @@
 {
 	"name": "obar",
 	"version": "0.0.8",
-	"description": "OBAR captures ChatGPT Web Viewer conversations into Markdown notes for Obsidian.",
+	"description": "OBAR captures ChatGPT Web Viewer sessions into Markdown records for Obsidian.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

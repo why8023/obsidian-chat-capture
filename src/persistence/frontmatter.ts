@@ -2,7 +2,7 @@ import { parseFrontMatterEntry, type FrontMatterCache } from "obsidian";
 import type {
 	ChatMessageRole,
 	NormalizedMessage,
-	NormalizedSnapshot,
+	NormalizedSessionSnapshot,
 	PluginSettings,
 	SessionIndexEntry,
 } from "../types";
@@ -11,80 +11,105 @@ import { shiftMarkdownFirstLevelHeadings } from "./markdown-heading-shifter";
 
 const LEGACY_CONVERSATION_FRONTMATTER_KEYS = {
 	source: "source",
-	conversationKey: "conversation_key",
-	chatUrl: "chat_url",
+	sessionKey: "conversation_key",
+	sessionUrl: "chat_url",
 	createdAt: "created_at",
 	updatedAt: "updated_at",
 	messageCount: "message_count",
 	extractorVersion: "extractor_version",
 	pageState: "page_state",
-	conversationId: "conversation_id",
-	provisionalConversationKey: "provisional_conversation_key",
+	sessionId: "conversation_id",
+	provisionalSessionKey: "provisional_conversation_key",
 } as const;
 
-const LEGACY_CONVERSATION_SOURCE = "chatgpt-webviewer";
-export const OBAR_CONVERSATION_SOURCE = "obar-chatgpt-webviewer";
-
-export const OBAR_CONVERSATION_FRONTMATTER_KEYS = {
+const PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS = {
 	source: "obar_source",
-	conversationKey: "obar_conversation_key",
-	title: "obar_conversation_title",
-	chatUrl: "obar_chat_url",
+	sessionKey: "obar_conversation_key",
+	sessionTitle: "obar_conversation_title",
+	sessionUrl: "obar_chat_url",
 	createdAt: "obar_created_at",
 	updatedAt: "obar_updated_at",
 	messageCount: "obar_message_count",
 	extractorVersion: "obar_extractor_version",
 	pageState: "obar_page_state",
-	conversationId: "obar_conversation_id",
-	provisionalConversationKey: "obar_provisional_conversation_key",
+	sessionId: "obar_conversation_id",
+	provisionalSessionKey: "obar_provisional_conversation_key",
 } as const;
 
-type ConversationFrontmatterField = keyof typeof OBAR_CONVERSATION_FRONTMATTER_KEYS;
+const LEGACY_CONVERSATION_SOURCE = "chatgpt-webviewer";
+export const OBAR_RECORD_SOURCE = "obar-chatgpt-webviewer";
 
-const CONVERSATION_FRONTMATTER_KEY_FALLBACKS: Record<
-	ConversationFrontmatterField,
+export const OBAR_RECORD_FRONTMATTER_KEYS = {
+	source: "obar_source",
+	sessionKey: "obar_session_key",
+	sessionTitle: "obar_session_title",
+	sessionUrl: "obar_session_url",
+	createdAt: "obar_record_created_at",
+	updatedAt: "obar_record_updated_at",
+	messageCount: "obar_record_message_count",
+	extractorVersion: "obar_extractor_version",
+	pageState: "obar_session_state",
+	sessionId: "obar_session_id",
+	provisionalSessionKey: "obar_provisional_session_key",
+} as const;
+
+type RecordFrontmatterField = keyof typeof OBAR_RECORD_FRONTMATTER_KEYS;
+
+const RECORD_FRONTMATTER_KEY_FALLBACKS: Record<
+	RecordFrontmatterField,
 	readonly string[]
 > = {
 	source: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.source,
+		OBAR_RECORD_FRONTMATTER_KEYS.source,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.source,
 	],
-	conversationKey: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.conversationKey,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.conversationKey,
+	sessionKey: [
+		OBAR_RECORD_FRONTMATTER_KEYS.sessionKey,
+		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.sessionKey,
+		LEGACY_CONVERSATION_FRONTMATTER_KEYS.sessionKey,
 	],
-	title: [OBAR_CONVERSATION_FRONTMATTER_KEYS.title],
-	chatUrl: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.chatUrl,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.chatUrl,
+	sessionTitle: [
+		OBAR_RECORD_FRONTMATTER_KEYS.sessionTitle,
+		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.sessionTitle,
+	],
+	sessionUrl: [
+		OBAR_RECORD_FRONTMATTER_KEYS.sessionUrl,
+		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.sessionUrl,
+		LEGACY_CONVERSATION_FRONTMATTER_KEYS.sessionUrl,
 	],
 	createdAt: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.createdAt,
+		OBAR_RECORD_FRONTMATTER_KEYS.createdAt,
+		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.createdAt,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.createdAt,
 	],
 	updatedAt: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.updatedAt,
+		OBAR_RECORD_FRONTMATTER_KEYS.updatedAt,
+		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.updatedAt,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.updatedAt,
 	],
 	messageCount: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.messageCount,
+		OBAR_RECORD_FRONTMATTER_KEYS.messageCount,
+		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.messageCount,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.messageCount,
 	],
 	extractorVersion: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.extractorVersion,
+		OBAR_RECORD_FRONTMATTER_KEYS.extractorVersion,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.extractorVersion,
 	],
 	pageState: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.pageState,
+		OBAR_RECORD_FRONTMATTER_KEYS.pageState,
+		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.pageState,
 		LEGACY_CONVERSATION_FRONTMATTER_KEYS.pageState,
 	],
-	conversationId: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.conversationId,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.conversationId,
+	sessionId: [
+		OBAR_RECORD_FRONTMATTER_KEYS.sessionId,
+		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.sessionId,
+		LEGACY_CONVERSATION_FRONTMATTER_KEYS.sessionId,
 	],
-	provisionalConversationKey: [
-		OBAR_CONVERSATION_FRONTMATTER_KEYS.provisionalConversationKey,
-		LEGACY_CONVERSATION_FRONTMATTER_KEYS.provisionalConversationKey,
+	provisionalSessionKey: [
+		OBAR_RECORD_FRONTMATTER_KEYS.provisionalSessionKey,
+		PREVIOUS_OBAR_CONVERSATION_FRONTMATTER_KEYS.provisionalSessionKey,
+		LEGACY_CONVERSATION_FRONTMATTER_KEYS.provisionalSessionKey,
 	],
 };
 
@@ -152,17 +177,15 @@ function renderMessageContent(message: NormalizedMessage): string {
 	return shiftMarkdownFirstLevelHeadings(content, 1);
 }
 
-export function getConversationFrontmatterKey(
-	field: ConversationFrontmatterField,
-): string {
-	return OBAR_CONVERSATION_FRONTMATTER_KEYS[field];
+export function getRecordFrontmatterKey(field: RecordFrontmatterField): string {
+	return OBAR_RECORD_FRONTMATTER_KEYS[field];
 }
 
-export function readConversationFrontmatterEntry(
+export function readRecordFrontmatterEntry(
 	frontmatter: FrontMatterCache,
-	field: ConversationFrontmatterField,
+	field: RecordFrontmatterField,
 ): unknown {
-	for (const key of CONVERSATION_FRONTMATTER_KEY_FALLBACKS[field]) {
+	for (const key of RECORD_FRONTMATTER_KEY_FALLBACKS[field]) {
 		const value: unknown = parseFrontMatterEntry(frontmatter, key);
 		if (value !== undefined && value !== null) {
 			return value;
@@ -172,8 +195,8 @@ export function readConversationFrontmatterEntry(
 	return undefined;
 }
 
-export function isSupportedConversationSource(value: string | undefined): boolean {
-	return value === OBAR_CONVERSATION_SOURCE || value === LEGACY_CONVERSATION_SOURCE;
+export function isSupportedRecordSource(value: string | undefined): boolean {
+	return value === OBAR_RECORD_SOURCE || value === LEGACY_CONVERSATION_SOURCE;
 }
 
 export function renderMessageMarkdown(
@@ -189,43 +212,40 @@ export function renderMessageMarkdown(
 		: `# ${buildMessageHeading(message, settings.messageHeadingSummaryLength)}`;
 }
 
-export function buildConversationFrontmatter(
-	snapshot: NormalizedSnapshot,
+export function buildRecordFrontmatter(
+	snapshot: NormalizedSessionSnapshot,
 	entry: SessionIndexEntry,
 ): Record<string, number | string> {
 	const frontmatter: Record<string, number | string> = {
-		[getConversationFrontmatterKey("source")]: snapshot.source,
-		[getConversationFrontmatterKey("conversationKey")]: snapshot.conversationKey,
-		[getConversationFrontmatterKey("title")]: entry.title || snapshot.conversationTitle,
-		[getConversationFrontmatterKey("chatUrl")]: snapshot.pageUrl,
-		[getConversationFrontmatterKey("createdAt")]: formatLocalTimestamp(entry.createdAt),
-		[getConversationFrontmatterKey("updatedAt")]: formatLocalTimestamp(entry.updatedAt),
-		[getConversationFrontmatterKey("messageCount")]: entry.lastStableMessageCount,
-		[getConversationFrontmatterKey("extractorVersion")]: snapshot.extractorVersion,
-		[getConversationFrontmatterKey("pageState")]: snapshot.pageState,
+		[getRecordFrontmatterKey("source")]: snapshot.source,
+		[getRecordFrontmatterKey("sessionKey")]: snapshot.sessionKey,
+		[getRecordFrontmatterKey("sessionTitle")]:
+			entry.sessionTitle || snapshot.sessionTitle,
+		[getRecordFrontmatterKey("sessionUrl")]: snapshot.pageUrl,
+		[getRecordFrontmatterKey("createdAt")]: formatLocalTimestamp(entry.createdAt),
+		[getRecordFrontmatterKey("updatedAt")]: formatLocalTimestamp(entry.updatedAt),
+		[getRecordFrontmatterKey("messageCount")]: entry.lastStableMessageCount,
+		[getRecordFrontmatterKey("extractorVersion")]: snapshot.extractorVersion,
+		[getRecordFrontmatterKey("pageState")]: snapshot.pageState,
 	};
 
-	if (snapshot.conversationId) {
-		frontmatter[getConversationFrontmatterKey("conversationId")] =
-			snapshot.conversationId;
+	if (snapshot.sessionId) {
+		frontmatter[getRecordFrontmatterKey("sessionId")] = snapshot.sessionId;
 	}
-	if (snapshot.provisionalConversationKey) {
-		frontmatter[getConversationFrontmatterKey("provisionalConversationKey")] =
-			snapshot.provisionalConversationKey;
+	if (snapshot.provisionalSessionKey) {
+		frontmatter[getRecordFrontmatterKey("provisionalSessionKey")] =
+			snapshot.provisionalSessionKey;
 	}
 
 	return frontmatter;
 }
 
-export function renderConversationBody(
-	snapshot: NormalizedSnapshot,
-	settings: Pick<
-		PluginSettings,
-		"conversationRoundSeparator" | "messageHeadingSummaryLength"
-	>,
+export function renderRecordBody(
+	snapshot: NormalizedSessionSnapshot,
+	settings: Pick<PluginSettings, "sessionRoundSeparator" | "messageHeadingSummaryLength">,
 ): string {
 	const blocks: string[] = [];
-	const separator = settings.conversationRoundSeparator.trim();
+	const separator = settings.sessionRoundSeparator.trim();
 
 	snapshot.messages.forEach((message, index) => {
 		if (index > 0 && message.role === "user" && separator) {
@@ -238,15 +258,12 @@ export function renderConversationBody(
 	return `${blocks.join("\n\n").trimEnd()}\n`;
 }
 
-export function renderConversationMarkdown(
-	snapshot: NormalizedSnapshot,
+export function renderRecordMarkdown(
+	snapshot: NormalizedSessionSnapshot,
 	entry: SessionIndexEntry,
-	settings: Pick<
-		PluginSettings,
-		"conversationRoundSeparator" | "messageHeadingSummaryLength"
-	>,
+	settings: Pick<PluginSettings, "sessionRoundSeparator" | "messageHeadingSummaryLength">,
 ): string {
-	const frontmatter = Object.entries(buildConversationFrontmatter(snapshot, entry)).map(
+	const frontmatter = Object.entries(buildRecordFrontmatter(snapshot, entry)).map(
 		([key, value]) => `${key}: ${yamlScalar(value)}`,
 	);
 
@@ -255,7 +272,7 @@ export function renderConversationMarkdown(
 		...frontmatter,
 		"---",
 		"",
-		renderConversationBody(snapshot, settings).trimEnd(),
+		renderRecordBody(snapshot, settings).trimEnd(),
 		"",
 	].join("\n");
 }

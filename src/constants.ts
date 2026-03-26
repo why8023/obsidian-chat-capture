@@ -17,7 +17,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 		},
 	],
 	fileNameTemplate: "{{date}}_{{title}}",
-	conversationRoundSeparator: "---",
+	sessionRoundSeparator: "---",
 	messageHeadingSummaryLength: 40,
 	postProcessing: {
 		enabled: false,

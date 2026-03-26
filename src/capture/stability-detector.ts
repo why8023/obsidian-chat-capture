@@ -1,5 +1,5 @@
 import type {
-	NormalizedSnapshot,
+	NormalizedSessionSnapshot,
 	PluginSettings,
 	StabilityDecision,
 	StabilityState,
@@ -9,12 +9,12 @@ export class StabilityDetector {
 	private readonly state = new Map<string, StabilityState>();
 
 	accept(
-		snapshot: NormalizedSnapshot,
+		snapshot: NormalizedSessionSnapshot,
 		settings: PluginSettings,
 		options?: { force?: boolean },
 	): StabilityDecision {
 		if (options?.force) {
-			this.state.delete(snapshot.conversationKey);
+			this.state.delete(snapshot.sessionKey);
 			return {
 				readyToPersist: true,
 				reason: "forced",
@@ -32,7 +32,7 @@ export class StabilityDetector {
 		}
 
 		if (lastMessage.role !== "assistant") {
-			this.state.delete(snapshot.conversationKey);
+			this.state.delete(snapshot.sessionKey);
 			return {
 				readyToPersist: true,
 				reason: "last-message-not-assistant",
@@ -41,7 +41,7 @@ export class StabilityDetector {
 		}
 
 		if (lastMessage.hasCompletionActions) {
-			this.state.delete(snapshot.conversationKey);
+			this.state.delete(snapshot.sessionKey);
 			return {
 				readyToPersist: true,
 				reason: "assistant-completion-actions-visible",
@@ -49,14 +49,14 @@ export class StabilityDetector {
 			};
 		}
 
-		const currentState = this.state.get(snapshot.conversationKey) ?? {
-			conversationKey: snapshot.conversationKey,
+		const currentState = this.state.get(snapshot.sessionKey) ?? {
+			sessionKey: snapshot.sessionKey,
 			stableRepeatCount: 0,
 		};
 
 		if (currentState.lastAssistantUid !== lastMessage.uid) {
-			this.state.set(snapshot.conversationKey, {
-				conversationKey: snapshot.conversationKey,
+			this.state.set(snapshot.sessionKey, {
+				sessionKey: snapshot.sessionKey,
 				lastAssistantUid: lastMessage.uid,
 				firstSeenAt: snapshot.capturedAt,
 				lastHash: lastMessage.textHash,
@@ -71,13 +71,13 @@ export class StabilityDetector {
 
 		const sameHash = currentState.lastHash === lastMessage.textHash;
 		const nextState: StabilityState = {
-			conversationKey: snapshot.conversationKey,
+			sessionKey: snapshot.sessionKey,
 			lastAssistantUid: lastMessage.uid,
 			firstSeenAt: currentState.firstSeenAt ?? snapshot.capturedAt,
 			lastHash: lastMessage.textHash,
 			stableRepeatCount: sameHash ? currentState.stableRepeatCount + 1 : 0,
 		};
-		this.state.set(snapshot.conversationKey, nextState);
+		this.state.set(snapshot.sessionKey, nextState);
 
 		const elapsedMs = snapshot.capturedAt - (nextState.firstSeenAt ?? snapshot.capturedAt);
 		const ready =

@@ -1,5 +1,5 @@
 export type ChatMessageRole = "user" | "assistant" | "system" | "unknown";
-export type PageState = "login" | "chat-list" | "conversation" | "unknown";
+export type PageState = "login" | "chat-list" | "session" | "unknown";
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type WebviewActivityReason =
 	| "dom-ready"
@@ -30,7 +30,7 @@ export interface PostProcessingSettings {
 export interface PluginSettings {
 	chatTargets: ChatTargetRule[];
 	fileNameTemplate: string;
-	conversationRoundSeparator: string;
+	sessionRoundSeparator: string;
 	messageHeadingSummaryLength: number;
 	postProcessing: PostProcessingSettings;
 	openNoteAfterSave: boolean;
@@ -59,14 +59,14 @@ export interface RawTurnShell {
 	actionFlags?: Partial<TurnActionFlags>;
 }
 
-export interface ConversationSnapshot {
+export interface SessionSnapshot {
 	source: "obar-chatgpt-webviewer";
 	extractorVersion: string;
 	pageUrl: string;
 	pageTitle: string;
 	capturedAt: string;
-	conversationId?: string;
-	conversationTitle?: string;
+	sessionId?: string;
+	sessionTitle?: string;
 	pageState: PageState;
 	turns: RawTurnShell[];
 }
@@ -85,13 +85,13 @@ export interface NormalizedMessage {
 	hasCompletionActions: boolean;
 }
 
-export interface NormalizedSnapshot {
+export interface NormalizedSessionSnapshot {
 	source: "obar-chatgpt-webviewer";
 	extractorVersion: string;
-	conversationId?: string;
-	conversationKey: string;
-	provisionalConversationKey?: string;
-	conversationTitle: string;
+	sessionId?: string;
+	sessionKey: string;
+	provisionalSessionKey?: string;
+	sessionTitle: string;
 	pageUrl: string;
 	pageTitle: string;
 	capturedAt: number;
@@ -108,11 +108,11 @@ export interface SessionMessageIndex {
 }
 
 export interface SessionIndexEntry {
-	conversationKey: string;
-	provisionalConversationKey?: string;
+	sessionKey: string;
+	provisionalSessionKey?: string;
 	filePath: string;
-	sourceUrl: string;
-	title?: string;
+	sessionUrl: string;
+	sessionTitle?: string;
 	createdAt: number;
 	updatedAt: number;
 	lastStableMessageCount: number;
@@ -120,13 +120,13 @@ export interface SessionIndexEntry {
 	messages: SessionMessageIndex[];
 }
 
-export interface ConversationNoteEntry {
+export interface RecordEntry {
 	filePath: string;
-	conversationId?: string;
-	conversationKey?: string;
-	provisionalConversationKey?: string;
-	chatUrl?: string;
-	title?: string;
+	sessionId?: string;
+	sessionKey?: string;
+	provisionalSessionKey?: string;
+	sessionUrl?: string;
+	sessionTitle?: string;
 	createdAt?: number;
 	updatedAt?: number;
 	messageCount?: number;
@@ -139,6 +139,7 @@ export interface PluginStateData {
 export interface PersistedPluginSettingsData extends Partial<PluginSettings> {
 	chatgptUrl?: string;
 	saveFolder?: string;
+	conversationRoundSeparator?: string;
 }
 
 export interface PersistedPluginData {
@@ -168,7 +169,7 @@ export interface WebviewActivityEvent {
 }
 
 export interface StabilityState {
-	conversationKey: string;
+	sessionKey: string;
 	lastAssistantUid?: string;
 	firstSeenAt?: number;
 	lastHash?: string;
@@ -178,7 +179,7 @@ export interface StabilityState {
 export interface StabilityDecision {
 	readyToPersist: boolean;
 	reason: string;
-	snapshot: NormalizedSnapshot;
+	snapshot: NormalizedSessionSnapshot;
 }
 
 export interface CaptureHealth {
@@ -227,7 +228,7 @@ export type CaptureRunStatus =
 	| "collect-returned-no-snapshot"
 	| "no-messages"
 	| "waiting-for-stable-reply"
-	| "waiting-for-conversation-id"
+	| "waiting-for-session-id"
 	| "skipped-regressive-snapshot"
 	| "error";
 
@@ -242,7 +243,7 @@ export interface CaptureSavedResult extends BaseCaptureRunResult {
 	messageCount: number;
 	created: boolean;
 	newMessageCount: number;
-	title?: string;
+	sessionTitle?: string;
 }
 
 export interface CaptureErrorResult extends BaseCaptureRunResult {

@@ -153,12 +153,12 @@ export class ViewerManager {
 				this.observeWebview(binding);
 				const recentActivityAt = this.recentActivityAt.get(binding.leafId) ?? 0;
 				const recentlyActive = recentActivityAt > 0 && now - recentActivityAt < 15_000;
-				const stableConversationUrl = /\/c\/[^/?#]+/i.test(binding.lastUrl);
+				const stableSessionUrl = /\/c\/[^/?#]+/i.test(binding.lastUrl);
 				const score =
 					(binding.leafId === activeLeafId ? 12 : 0) +
 					(binding.leafId === this.preferredLeafId ? 8 : 0) +
 					(recentlyActive ? 6 : 0) +
-					(stableConversationUrl ? 2 : 0);
+					(stableSessionUrl ? 2 : 0);
 				return {
 					binding,
 					score,

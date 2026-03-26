@@ -3,7 +3,7 @@
 	"name": "OBAR",
 	"version": "0.0.8",
 	"minAppVersion": "1.8.3",
-	"description": "OBAR captures ChatGPT Web Viewer conversations into Markdown notes.",
+	"description": "OBAR captures ChatGPT Web Viewer sessions into Markdown records.",
 	"author": "wangw",
 	"isDesktopOnly": true
 }

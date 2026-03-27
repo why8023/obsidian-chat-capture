@@ -136,8 +136,11 @@ export function buildTurnShellCollectorSource(): string {
 
   function detectRole(element) {
     const directRole = element.getAttribute("data-message-author-role");
-    if (directRole === "user" || directRole === "assistant" || directRole === "system") {
+    if (directRole === "user" || directRole === "system" || directRole === "ai") {
       return directRole;
+    }
+    if (directRole === "assistant") {
+      return "ai";
     }
 
     const descendantRole = element
@@ -145,10 +148,13 @@ export function buildTurnShellCollectorSource(): string {
       ?.getAttribute("data-message-author-role");
     if (
       descendantRole === "user" ||
-      descendantRole === "assistant" ||
-      descendantRole === "system"
+      descendantRole === "system" ||
+      descendantRole === "ai"
     ) {
       return descendantRole;
+    }
+    if (descendantRole === "assistant") {
+      return "ai";
     }
 
     const haystack = [
@@ -165,8 +171,8 @@ export function buildTurnShellCollectorSource(): string {
     if (profile.userRoleHints.some((hint) => haystack.includes(hint))) {
       return "user";
     }
-    if (profile.assistantRoleHints.some((hint) => haystack.includes(hint))) {
-      return "assistant";
+    if (profile.aiRoleHints.some((hint) => haystack.includes(hint))) {
+      return "ai";
     }
     if (profile.systemRoleHints.some((hint) => haystack.includes(hint))) {
       return "system";
@@ -190,7 +196,7 @@ export function buildTurnShellCollectorSource(): string {
         regex: /^(?:\\u4f60|\\u60a8)\\s*(?:\\u8bf4|\\u95ee)\\s*[:\\uFF1A]\\s*/,
       },
       {
-        kind: "assistant-echo",
+        kind: "ai-echo",
         regex:
           /^(?:chatgpt|assistant|gpt|model|\\u52a9\\u624b|\\u6a21\\u578b)\\s*(?:said|says|\\u8bf4)?\\s*[:\\uFF1A]\\s*/i,
       },
@@ -211,7 +217,7 @@ export function buildTurnShellCollectorSource(): string {
     return null;
   }
 
-  function isTransientAssistantStatus(text) {
+  function isTransientAiStatus(text) {
     const normalized = normalizeText(text).toLowerCase();
     if (!normalized) {
       return false;
@@ -240,12 +246,12 @@ export function buildTurnShellCollectorSource(): string {
       return true;
     }
 
-    if (!narration.content || isTransientAssistantStatus(narration.content)) {
+    if (!narration.content || isTransientAiStatus(narration.content)) {
       return true;
     }
 
     return shells.some((other) => {
-      if (other === shell || other.role !== "assistant") {
+      if (other === shell || other.role !== "ai") {
         return false;
       }
 
@@ -281,7 +287,7 @@ export function buildTurnShellCollectorSource(): string {
       }
 
       const actionFlags =
-        role === "assistant"
+        role === "ai"
           ? extractActionFlags(candidate)
           : {
               hasCopyButton: false,

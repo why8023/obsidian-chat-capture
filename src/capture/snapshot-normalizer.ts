@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { OBAR_CAPTURE_SOURCE } from "../constants";
+import { buildMessageMatchKey } from "../message-anchor";
 import { DefuddleAdapter } from "./defuddle-adapter";
 import type {
 	ChatMessageRole,
@@ -39,9 +40,11 @@ function normalizeSnippet(value: string | undefined): string {
 function normalizeRole(role: string | undefined): ChatMessageRole {
 	switch (role) {
 		case "user":
-		case "assistant":
+		case "ai":
 		case "system":
 			return role;
+		case "assistant":
+			return "ai";
 		default:
 			return "unknown";
 	}
@@ -107,6 +110,7 @@ export class SnapshotNormalizer {
 			const contentHtmlHash =
 				normalizeText(turn.contentHtmlHash) || hashString(turn.contentHtml);
 			const textHash = hashString(markdown || text);
+			const matchKey = buildMessageMatchKey(role, text);
 			const uid = hashString(
 				[String(index + 1), role, domKey, previousUid].join("|"),
 			);
@@ -114,6 +118,7 @@ export class SnapshotNormalizer {
 
 			normalizedMessages.push({
 				uid,
+				matchKey,
 				ordinal: normalizedMessages.length + 1,
 				role,
 				text,

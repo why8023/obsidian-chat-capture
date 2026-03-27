@@ -31,11 +31,11 @@ export class StabilityDetector {
 			};
 		}
 
-		if (lastMessage.role !== "assistant") {
+		if (lastMessage.role !== "ai") {
 			this.state.delete(snapshot.sessionKey);
 			return {
 				readyToPersist: true,
-				reason: "last-message-not-assistant",
+				reason: "last-message-not-ai",
 				snapshot,
 			};
 		}
@@ -44,7 +44,7 @@ export class StabilityDetector {
 			this.state.delete(snapshot.sessionKey);
 			return {
 				readyToPersist: true,
-				reason: "assistant-completion-actions-visible",
+				reason: "ai-completion-actions-visible",
 				snapshot,
 			};
 		}
@@ -54,17 +54,17 @@ export class StabilityDetector {
 			stableRepeatCount: 0,
 		};
 
-		if (currentState.lastAssistantUid !== lastMessage.uid) {
+		if (currentState.lastAiUid !== lastMessage.uid) {
 			this.state.set(snapshot.sessionKey, {
 				sessionKey: snapshot.sessionKey,
-				lastAssistantUid: lastMessage.uid,
+				lastAiUid: lastMessage.uid,
 				firstSeenAt: snapshot.capturedAt,
 				lastHash: lastMessage.textHash,
 				stableRepeatCount: 0,
 			});
 			return {
 				readyToPersist: false,
-				reason: "assistant-message-started",
+				reason: "ai-message-started",
 				snapshot,
 			};
 		}
@@ -72,7 +72,7 @@ export class StabilityDetector {
 		const sameHash = currentState.lastHash === lastMessage.textHash;
 		const nextState: StabilityState = {
 			sessionKey: snapshot.sessionKey,
-			lastAssistantUid: lastMessage.uid,
+			lastAiUid: lastMessage.uid,
 			firstSeenAt: currentState.firstSeenAt ?? snapshot.capturedAt,
 			lastHash: lastMessage.textHash,
 			stableRepeatCount: sameHash ? currentState.stableRepeatCount + 1 : 0,
@@ -86,7 +86,7 @@ export class StabilityDetector {
 
 		return {
 			readyToPersist: ready,
-			reason: ready ? "assistant-settled" : "assistant-streaming",
+			reason: ready ? "ai-settled" : "ai-streaming",
 			snapshot,
 		};
 	}

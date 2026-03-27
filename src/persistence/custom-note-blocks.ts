@@ -1,7 +1,21 @@
+import {
+	OBAR_RECORD_END_MARKER,
+	OBAR_RECORD_START_MARKER,
+	type MessageAnchorMetadata,
+	buildMessageMatchKey,
+	hashString,
+	markdownToPlainText,
+	normalizeMessageMarkdownBody,
+	parseMessageAnchorMetadata,
+	parseMessageHeadingRole,
+} from "../message-anchor";
+
 const CUSTOM_NOTE_START_MARKER = "OBAR-CUSTOM-NOTE-START";
 const CUSTOM_NOTE_END_MARKER = "OBAR-CUSTOM-NOTE-END";
 const CUSTOM_NOTE_CONTEXT_WINDOW = 160;
 const MESSAGE_HEADING_SOURCE = "^# (?:USER|AI)(?::.*)?$";
+const MESSAGE_START_PREFIX = `<!-- ${OBAR_RECORD_START_MARKER}:`;
+const MESSAGE_END_COMMENT = `<!-- ${OBAR_RECORD_END_MARKER} -->`;
 
 interface CustomNoteBlock {
 	start: number;
@@ -16,6 +30,20 @@ interface PositionedCustomNoteBlock extends CustomNoteBlock {
 interface BodySegment {
 	start: number;
 	end: number;
+}
+
+interface ParsedMessageBlock {
+	index: number;
+	start: number;
+	end: number;
+	contentStart: number;
+	contentEnd: number;
+	content: string;
+	role: MessageAnchorMetadata["role"];
+	matchKey?: string;
+	contentHtmlHash?: string;
+	contentHash?: string;
+	customNoteBlocks: CustomNoteBlock[];
 }
 
 function createCustomNotePattern(): RegExp {
@@ -258,41 +286,346 @@ function restoreSegmentCustomNoteBlocks(
 	return result;
 }
 
+function createParsedMessageBlock(options: {
+	index: number;
+	body: string;
+	start: number;
+	end: number;
+	contentStart: number;
+	contentEnd: number;
+	metadata: MessageAnchorMetadata | null;
+}): ParsedMessageBlock {
+	const content = options.body.slice(options.contentStart, options.contentEnd);
+	const customNoteBlocks = extractCustomNoteBlocks(content);
+	const role =
+		options.metadata?.role ??
+		parseMessageHeadingRole(content) ??
+		"unknown";
+	const normalizedMarkdown = normalizeMessageMarkdownBody(
+		stripCustomNoteBlocks(content),
+	);
+	const plainText = markdownToPlainText(normalizedMarkdown);
+	const contentHash = normalizedMarkdown
+		? hashString(`${role}|${normalizedMarkdown}`)
+		: undefined;
+
+	return {
+		index: options.index,
+		start: options.start,
+		end: options.end,
+		contentStart: options.contentStart,
+		contentEnd: options.contentEnd,
+		content,
+		role,
+		matchKey:
+			options.metadata?.matchKey ??
+			(plainText ? buildMessageMatchKey(role, plainText) : undefined),
+		contentHtmlHash: options.metadata?.contentHtmlHash,
+		contentHash,
+		customNoteBlocks,
+	};
+}
+
+function parseAnchoredMessageBlocks(body: string): ParsedMessageBlock[] {
+	const blocks: ParsedMessageBlock[] = [];
+	let searchFrom = 0;
+
+	while (searchFrom < body.length) {
+		const start = body.indexOf(MESSAGE_START_PREFIX, searchFrom);
+		if (start === -1) {
+			break;
+		}
+
+		const markerEnd = body.indexOf("-->", start);
+		if (markerEnd === -1) {
+			break;
+		}
+
+		const metadata = parseMessageAnchorMetadata(
+			body.slice(start + MESSAGE_START_PREFIX.length, markerEnd).trim(),
+		);
+		const contentStart = markerEnd + 3;
+		const endStart = body.indexOf(MESSAGE_END_COMMENT, contentStart);
+		if (endStart === -1) {
+			break;
+		}
+
+		const end = endStart + MESSAGE_END_COMMENT.length;
+		blocks.push(
+			createParsedMessageBlock({
+				index: blocks.length,
+				body,
+				start,
+				end,
+				contentStart,
+				contentEnd: endStart,
+				metadata,
+			}),
+		);
+		searchFrom = end;
+	}
+
+	return blocks;
+}
+
+function parseLegacyMessageBlocks(body: string): ParsedMessageBlock[] {
+	const segments = getBodySegments(body);
+	const blocks: ParsedMessageBlock[] = [];
+
+	for (const segment of segments) {
+		const content = body.slice(segment.start, segment.end);
+		if (!parseMessageHeadingRole(content)) {
+			continue;
+		}
+
+		blocks.push(
+			createParsedMessageBlock({
+				index: blocks.length,
+				body,
+				start: segment.start,
+				end: segment.end,
+				contentStart: segment.start,
+				contentEnd: segment.end,
+				metadata: null,
+			}),
+		);
+	}
+
+	return blocks;
+}
+
+function parseMessageBlocks(body: string): ParsedMessageBlock[] {
+	const anchoredBlocks = parseAnchoredMessageBlocks(body);
+	if (anchoredBlocks.length > 0) {
+		return anchoredBlocks;
+	}
+
+	return parseLegacyMessageBlocks(body);
+}
+
+function isBlockContainedInRange(
+	block: CustomNoteBlock,
+	start: number,
+	end: number,
+): boolean {
+	return block.start >= start && block.end <= end;
+}
+
+function collectStandaloneCustomNoteBlocks(
+	body: string,
+	messageBlocks: ParsedMessageBlock[],
+): string[] {
+	const customBlocks = extractCustomNoteBlocks(body);
+	return customBlocks
+		.filter(
+			(block) =>
+				!messageBlocks.some((messageBlock) =>
+					isBlockContainedInRange(block, messageBlock.start, messageBlock.end),
+				),
+		)
+		.map((block) => block.fullText);
+}
+
+function pairUniqueByFingerprint(
+	oldBlocks: ParsedMessageBlock[],
+	newBlocks: ParsedMessageBlock[],
+	matches: Map<number, number>,
+	usedNew: Set<number>,
+	getFingerprint: (block: ParsedMessageBlock) => string | undefined,
+): void {
+	const oldByFingerprint = new Map<string, ParsedMessageBlock[]>();
+	const newByFingerprint = new Map<string, ParsedMessageBlock[]>();
+
+	for (const block of oldBlocks) {
+		if (matches.has(block.index)) {
+			continue;
+		}
+		const fingerprint = getFingerprint(block);
+		if (!fingerprint) {
+			continue;
+		}
+
+		const group = oldByFingerprint.get(fingerprint) ?? [];
+		group.push(block);
+		oldByFingerprint.set(fingerprint, group);
+	}
+
+	for (const block of newBlocks) {
+		if (usedNew.has(block.index)) {
+			continue;
+		}
+		const fingerprint = getFingerprint(block);
+		if (!fingerprint) {
+			continue;
+		}
+
+		const group = newByFingerprint.get(fingerprint) ?? [];
+		group.push(block);
+		newByFingerprint.set(fingerprint, group);
+	}
+
+	for (const [fingerprint, oldGroup] of oldByFingerprint.entries()) {
+		const newGroup = newByFingerprint.get(fingerprint);
+		if (!newGroup || oldGroup.length !== 1 || newGroup.length !== 1) {
+			continue;
+		}
+
+		const [oldBlock] = oldGroup;
+		const [newBlock] = newGroup;
+		if (!oldBlock || !newBlock) {
+			continue;
+		}
+
+		matches.set(oldBlock.index, newBlock.index);
+		usedNew.add(newBlock.index);
+	}
+}
+
+function pairRemainingByGroup(
+	oldBlocks: ParsedMessageBlock[],
+	newBlocks: ParsedMessageBlock[],
+	matches: Map<number, number>,
+	usedNew: Set<number>,
+	getGroupKey: (block: ParsedMessageBlock) => string | undefined,
+): void {
+	const oldGroups = new Map<string, ParsedMessageBlock[]>();
+	const newGroups = new Map<string, ParsedMessageBlock[]>();
+
+	for (const block of oldBlocks) {
+		if (matches.has(block.index)) {
+			continue;
+		}
+		const key = getGroupKey(block);
+		if (!key) {
+			continue;
+		}
+
+		const group = oldGroups.get(key) ?? [];
+		group.push(block);
+		oldGroups.set(key, group);
+	}
+
+	for (const block of newBlocks) {
+		if (usedNew.has(block.index)) {
+			continue;
+		}
+		const key = getGroupKey(block);
+		if (!key) {
+			continue;
+		}
+
+		const group = newGroups.get(key) ?? [];
+		group.push(block);
+		newGroups.set(key, group);
+	}
+
+	for (const [key, oldGroup] of oldGroups.entries()) {
+		const newGroup = newGroups.get(key);
+		if (!newGroup || newGroup.length === 0) {
+			continue;
+		}
+
+		pairUniqueByFingerprint(oldGroup, newGroup, matches, usedNew, (block) =>
+			block.contentHtmlHash
+				? `${block.matchKey ?? key}|html|${block.contentHtmlHash}`
+				: undefined,
+		);
+		pairUniqueByFingerprint(oldGroup, newGroup, matches, usedNew, (block) =>
+			block.contentHash ? `${block.role}|content|${block.contentHash}` : undefined,
+		);
+
+		const remainingOld = oldGroup.filter((block) => !matches.has(block.index));
+		const remainingNew = newGroup.filter((block) => !usedNew.has(block.index));
+		const pairCount = Math.min(remainingOld.length, remainingNew.length);
+		for (let index = 0; index < pairCount; index += 1) {
+			const oldBlock = remainingOld[index];
+			const newBlock = remainingNew[index];
+			if (!oldBlock || !newBlock) {
+				continue;
+			}
+
+			matches.set(oldBlock.index, newBlock.index);
+			usedNew.add(newBlock.index);
+		}
+	}
+}
+
+function matchMessageBlocks(
+	oldBlocks: ParsedMessageBlock[],
+	newBlocks: ParsedMessageBlock[],
+): Map<number, number> {
+	const matches = new Map<number, number>();
+	const usedNew = new Set<number>();
+
+	pairUniqueByFingerprint(oldBlocks, newBlocks, matches, usedNew, (block) =>
+		block.matchKey && block.contentHtmlHash
+			? `${block.matchKey}|${block.contentHtmlHash}`
+			: undefined,
+	);
+	pairUniqueByFingerprint(oldBlocks, newBlocks, matches, usedNew, (block) =>
+		block.matchKey,
+	);
+	pairUniqueByFingerprint(oldBlocks, newBlocks, matches, usedNew, (block) =>
+		block.contentHash ? `${block.role}|${block.contentHash}` : undefined,
+	);
+	pairRemainingByGroup(oldBlocks, newBlocks, matches, usedNew, (block) =>
+		block.matchKey ??
+		(block.contentHash ? `${block.role}|${block.contentHash}` : undefined),
+	);
+
+	return matches;
+}
+
 function restoreCustomNoteBlocks(existingBody: string, newBody: string): string {
-	const existingBlocks = extractCustomNoteBlocks(existingBody);
-	if (existingBlocks.length === 0) {
-		return newBody;
+	const existingBlocks = parseMessageBlocks(existingBody);
+	const newBlocks = parseMessageBlocks(newBody);
+	const standaloneBlocks = collectStandaloneCustomNoteBlocks(existingBody, existingBlocks);
+	const noteBlocks = existingBlocks.filter((block) => block.customNoteBlocks.length > 0);
+
+	if (noteBlocks.length === 0) {
+		return appendCustomBlocks(newBody, standaloneBlocks);
 	}
 
-	const existingSegments = getBodySegments(existingBody);
-	const newSegments = getBodySegments(newBody);
+	if (newBlocks.length === 0) {
+		return appendCustomBlocks(newBody, [
+			...standaloneBlocks,
+			...noteBlocks.flatMap((block) =>
+				block.customNoteBlocks.map((note) => note.fullText),
+			),
+		]);
+	}
+
+	const matches = matchMessageBlocks(noteBlocks, newBlocks);
+	const orphanBlocks = [...standaloneBlocks];
+	const replacements: Array<{ block: ParsedMessageBlock; content: string }> = [];
+
+	for (const oldBlock of noteBlocks) {
+		const matchedIndex = matches.get(oldBlock.index);
+		if (matchedIndex === undefined) {
+			orphanBlocks.push(...oldBlock.customNoteBlocks.map((note) => note.fullText));
+			continue;
+		}
+
+		const newBlock = newBlocks[matchedIndex];
+		if (!newBlock) {
+			orphanBlocks.push(...oldBlock.customNoteBlocks.map((note) => note.fullText));
+			continue;
+		}
+
+		replacements.push({
+			block: newBlock,
+			content: restoreSegmentCustomNoteBlocks(oldBlock.content, newBlock.content),
+		});
+	}
+
 	let result = newBody;
-	const orphanBlocks: string[] = [];
-
-	for (let index = existingSegments.length - 1; index >= 0; index -= 1) {
-		const existingSegment = existingSegments[index];
-		if (!existingSegment) {
-			continue;
-		}
-
-		const oldSegment = existingBody.slice(existingSegment.start, existingSegment.end);
-		const segmentBlocks = extractCustomNoteBlocks(oldSegment);
-		if (segmentBlocks.length === 0) {
-			continue;
-		}
-
-		const newSegmentRange = newSegments[index];
-		if (!newSegmentRange) {
-			orphanBlocks.unshift(...segmentBlocks.map((block) => block.fullText));
-			continue;
-		}
-
-		const newSegment = result.slice(newSegmentRange.start, newSegmentRange.end);
-		const restoredSegment = restoreSegmentCustomNoteBlocks(oldSegment, newSegment);
-		result = `${result.slice(0, newSegmentRange.start)}${restoredSegment}${result.slice(
-			newSegmentRange.end,
-		)}`;
-	}
+	replacements
+		.sort((left, right) => right.block.contentStart - left.block.contentStart)
+		.forEach(({ block, content }) => {
+			result = `${result.slice(0, block.contentStart)}${content}${result.slice(
+				block.contentEnd,
+			)}`;
+		});
 
 	return appendCustomBlocks(result, orphanBlocks);
 }

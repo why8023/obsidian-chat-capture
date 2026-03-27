@@ -1,4 +1,4 @@
-export type ChatMessageRole = "user" | "assistant" | "system" | "unknown";
+export type ChatMessageRole = "user" | "ai" | "system" | "unknown";
 export type PageState = "login" | "chat-list" | "session" | "unknown";
 export type LogLevel = "debug" | "info" | "warn" | "error";
 export type WebviewActivityReason =
@@ -73,6 +73,7 @@ export interface SessionSnapshot {
 
 export interface NormalizedMessage {
 	uid: string;
+	matchKey: string;
 	ordinal: number;
 	role: ChatMessageRole;
 	text: string;
@@ -163,7 +164,7 @@ export interface WebviewActivityEvent {
 
 export interface StabilityState {
 	sessionKey: string;
-	lastAssistantUid?: string;
+	lastAiUid?: string;
 	firstSeenAt?: number;
 	lastHash?: string;
 	stableRepeatCount: number;

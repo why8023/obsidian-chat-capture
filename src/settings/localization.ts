@@ -117,13 +117,13 @@ const ENGLISH_COPY: SettingsTabCopy = {
 		settleRepeatCount: {
 			name: "Settle repeat count",
 			description:
-				"Fallback repeat count when no assistant completion actions are detected.",
+				"Fallback repeat count when no AI completion actions are detected.",
 			placeholder: "2",
 		},
 		settleTimeoutMs: {
 			name: "Settle timeout",
 			description:
-				"Fallback wait in milliseconds when no assistant completion actions are detected.",
+				"Fallback wait in milliseconds when no AI completion actions are detected.",
 			placeholder: "3000",
 		},
 		autoCapture: {

@@ -5,7 +5,7 @@ export interface SelectorProfileDefinition {
 	messageCandidates: string[];
 	contentRootCandidates: string[];
 	userRoleHints: string[];
-	assistantRoleHints: string[];
+	aiRoleHints: string[];
 	systemRoleHints: string[];
 	ignoreSelectors: string[];
 }
@@ -34,7 +34,7 @@ export const DEFAULT_SELECTOR_PROFILES: SelectorProfileDefinition[] = [
 			"[dir='auto']",
 		],
 		userRoleHints: ["user", "you"],
-		assistantRoleHints: ["assistant", "chatgpt", "gpt", "model"],
+		aiRoleHints: ["assistant", "chatgpt", "gpt", "model", "ai"],
 		systemRoleHints: ["system"],
 		ignoreSelectors: [
 			"button",

@@ -1,4 +1,8 @@
 import { parseFrontMatterEntry, type FrontMatterCache } from "obsidian";
+import {
+	renderMessageAnchorEnd,
+	serializeMessageAnchorMetadata,
+} from "../message-anchor";
 import type {
 	ChatMessageRole,
 	NormalizedMessage,
@@ -118,6 +122,21 @@ export function renderMessageMarkdown(
 		: `# ${buildMessageHeading(message, settings.messageHeadingSummaryLength)}`;
 }
 
+function renderMessageBlock(
+	message: NormalizedMessage,
+	settings: Pick<PluginSettings, "messageHeadingSummaryLength">,
+): string {
+	return [
+		serializeMessageAnchorMetadata({
+			matchKey: message.matchKey,
+			role: message.role,
+			contentHtmlHash: message.contentHtmlHash,
+		}),
+		renderMessageMarkdown(message, settings),
+		renderMessageAnchorEnd(),
+	].join("\n");
+}
+
 export function buildRecordFrontmatter(
 	snapshot: NormalizedSessionSnapshot,
 	entry: SessionIndexEntry,
@@ -154,7 +173,7 @@ export function renderRecordBody(
 			blocks.push(separator);
 		}
 
-		blocks.push(renderMessageMarkdown(message, settings));
+		blocks.push(renderMessageBlock(message, settings));
 	});
 
 	return `${blocks.join("\n\n").trimEnd()}\n`;

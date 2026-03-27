@@ -12,6 +12,48 @@ export const OBAR_RECORD_END_MARKER = "OBAR-RECORD-END";
 
 const MESSAGE_HEADING_PATTERN = /^# (USER|AI)(?::.*)?$/;
 const TRAILING_THEMATIC_BREAK_PATTERN = /\n{2,}(?:[-*_]\s*){3,}\s*$/;
+const MATCH_KEY_VERSION = "v2";
+const MATCH_KEY_BYTES = 9;
+const BASE64URL_ALPHABET =
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+function encodeBase64Url(bytes: number[]): string {
+	let output = "";
+
+	for (let index = 0; index < bytes.length; index += 3) {
+		const first = bytes[index] ?? 0;
+		const second = bytes[index + 1];
+		const third = bytes[index + 2];
+		const chunk =
+			(first << 16) |
+			((second ?? 0) << 8) |
+			(third ?? 0);
+
+		output += BASE64URL_ALPHABET[(chunk >> 18) & 0x3f] ?? "";
+		output += BASE64URL_ALPHABET[(chunk >> 12) & 0x3f] ?? "";
+		if (second !== undefined) {
+			output += BASE64URL_ALPHABET[(chunk >> 6) & 0x3f] ?? "";
+		}
+		if (third !== undefined) {
+			output += BASE64URL_ALPHABET[chunk & 0x3f] ?? "";
+		}
+	}
+
+	return output;
+}
+
+function shortenHashHex(value: string): string {
+	const normalized = String(value ?? "").trim().toLowerCase();
+	const digestHex =
+		/^[0-9a-f]{64}$/i.test(normalized) ? normalized : hashString(normalized);
+	const bytes: number[] = [];
+
+	for (let index = 0; index < MATCH_KEY_BYTES * 2; index += 2) {
+		bytes.push(Number.parseInt(digestHex.slice(index, index + 2), 16));
+	}
+
+	return encodeBase64Url(bytes);
+}
 
 export function hashString(value: string): string {
 	return createHash("sha256").update(value).digest("hex");
@@ -52,7 +94,7 @@ export function buildMessageMatchKeyFromTextHash(
 	role: ChatMessageRole,
 	textHash: string,
 ): string {
-	return `v1|${role}|${textHash}`;
+	return `${MATCH_KEY_VERSION}|${role}|${shortenHashHex(textHash)}`;
 }
 
 export function buildMessageMatchKey(

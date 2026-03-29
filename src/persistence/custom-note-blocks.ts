@@ -13,6 +13,8 @@ import {
 const CUSTOM_NOTE_START_MARKER = "OBAR-CUSTOM-NOTE-START";
 const CUSTOM_NOTE_END_MARKER = "OBAR-CUSTOM-NOTE-END";
 const CUSTOM_NOTE_CONTEXT_WINDOW = 160;
+const CUSTOM_NOTE_ID_LENGTH = 12;
+const CUSTOM_NOTE_ID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const MESSAGE_HEADING_SOURCE = "^# (?:USER|AI)(?::.*)?$";
 const MESSAGE_START_PREFIX = `<!-- ${OBAR_RECORD_START_MARKER}:`;
 const MESSAGE_END_COMMENT = `<!-- ${OBAR_RECORD_END_MARKER} -->`;
@@ -57,27 +59,32 @@ function createMessageHeadingPattern(): RegExp {
 	return new RegExp(MESSAGE_HEADING_SOURCE, "gm");
 }
 
-function createUuidFallback(): string {
-	const bytes = new Uint8Array(16);
-	if (globalThis.crypto?.getRandomValues) {
-		globalThis.crypto.getRandomValues(bytes);
-	} else {
-		for (let index = 0; index < bytes.length; index += 1) {
-			bytes[index] = Math.floor(Math.random() * 256);
-		}
+function createShortIdFallback(length = CUSTOM_NOTE_ID_LENGTH): string {
+	let output = "";
+
+	for (let index = 0; index < length; index += 1) {
+		output +=
+			CUSTOM_NOTE_ID_ALPHABET[
+				Math.floor(Math.random() * CUSTOM_NOTE_ID_ALPHABET.length)
+			] ?? "";
 	}
 
-	bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-	bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+	return output;
+}
 
-	const hex = [...bytes].map((value) => value.toString(16).padStart(2, "0"));
-	return [
-		hex.slice(0, 4).join(""),
-		hex.slice(4, 6).join(""),
-		hex.slice(6, 8).join(""),
-		hex.slice(8, 10).join(""),
-		hex.slice(10, 16).join(""),
-	].join("-");
+function createShortId(length = CUSTOM_NOTE_ID_LENGTH): string {
+	const bytes = new Uint8Array(length);
+	if (globalThis.crypto?.getRandomValues) {
+		globalThis.crypto.getRandomValues(bytes);
+	}
+
+	if (!globalThis.crypto?.getRandomValues) {
+		return createShortIdFallback(length);
+	}
+
+	return [...bytes]
+		.map((value) => CUSTOM_NOTE_ID_ALPHABET[value & 31] ?? "")
+		.join("");
 }
 
 function splitDocument(content: string): { frontmatter: string; body: string } {
@@ -631,7 +638,7 @@ function restoreCustomNoteBlocks(existingBody: string, newBody: string): string 
 }
 
 export function createCustomNoteId(): string {
-	return globalThis.crypto?.randomUUID?.() ?? createUuidFallback();
+	return createShortId();
 }
 
 export function renderCustomNoteBlock(

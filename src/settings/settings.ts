@@ -26,17 +26,6 @@ function normalizeTemplate(input: string | undefined, fallback: string): string 
 	return template || fallback;
 }
 
-function normalizeSessionRoundSeparator(
-	input: string | undefined,
-	fallback: string,
-): string {
-	if (input === undefined) {
-		return fallback;
-	}
-
-	return input.trim();
-}
-
 function normalizeCommandIds(input: string[] | undefined): string[] {
 	if (!Array.isArray(input)) {
 		return [];
@@ -53,10 +42,6 @@ export function normalizePluginSettings(
 		fileNameTemplate: normalizeTemplate(
 			data?.fileNameTemplate,
 			DEFAULT_SETTINGS.fileNameTemplate,
-		),
-		sessionRoundSeparator: normalizeSessionRoundSeparator(
-			data?.sessionRoundSeparator,
-			DEFAULT_SETTINGS.sessionRoundSeparator,
 		),
 		messageHeadingSummaryLength: clampInteger(
 			data?.messageHeadingSummaryLength,

@@ -163,26 +163,18 @@ export function buildRecordFrontmatter(
 
 export function renderRecordBody(
 	snapshot: NormalizedSessionSnapshot,
-	settings: Pick<PluginSettings, "sessionRoundSeparator" | "messageHeadingSummaryLength">,
+	settings: Pick<PluginSettings, "messageHeadingSummaryLength">,
 ): string {
-	const blocks: string[] = [];
-	const separator = settings.sessionRoundSeparator.trim();
-
-	snapshot.messages.forEach((message, index) => {
-		if (index > 0 && message.role === "user" && separator) {
-			blocks.push(separator);
-		}
-
-		blocks.push(renderMessageBlock(message, settings));
-	});
-
+	const blocks = snapshot.messages.map((message) =>
+		renderMessageBlock(message, settings),
+	);
 	return `${blocks.join("\n\n").trimEnd()}\n`;
 }
 
 export function renderRecordMarkdown(
 	snapshot: NormalizedSessionSnapshot,
 	entry: SessionIndexEntry,
-	settings: Pick<PluginSettings, "sessionRoundSeparator" | "messageHeadingSummaryLength">,
+	settings: Pick<PluginSettings, "messageHeadingSummaryLength">,
 ): string {
 	const frontmatter = Object.entries(buildRecordFrontmatter(snapshot, entry)).map(
 		([key, value]) => `${key}: ${yamlScalar(value)}`,

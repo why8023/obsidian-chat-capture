@@ -17,7 +17,6 @@ export interface SettingsTabCopy {
 	fields: {
 		chatTargets: SettingText;
 		fileNameTemplate: SettingText;
-		sessionRoundSeparator: SettingText;
 		messageHeadingSummaryLength: SettingText;
 		openNoteAfterSave: SettingText;
 		postProcessingEnabled: SettingText;
@@ -76,12 +75,6 @@ const ENGLISH_COPY: SettingsTabCopy = {
 			name: "File name template",
 			description: "Use {{date}}, {{title}}, and {{key}} placeholders.",
 			placeholder: "{{date}}_{{title}}",
-		},
-		sessionRoundSeparator: {
-			name: "Session separator",
-			description:
-				"Inserted before each new USER turn. Use --- for a Markdown horizontal rule. Leave blank to disable it.",
-			placeholder: "---",
 		},
 		messageHeadingSummaryLength: {
 			name: "Message heading summary length",
@@ -189,12 +182,6 @@ const CHINESE_COPY: SettingsTabCopy = {
 			name: "文件名模板",
 			description: "支持 {{date}}、{{title}} 和 {{key}} 占位符。",
 			placeholder: "{{date}}_{{title}}",
-		},
-		sessionRoundSeparator: {
-			name: "会话分隔符",
-			description:
-				"在每个新 USER 轮次前插入。使用 --- 可生成 Markdown 水平线，留空则关闭。",
-			placeholder: "---",
 		},
 		messageHeadingSummaryLength: {
 			name: "消息标题摘要长度",

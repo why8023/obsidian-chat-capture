@@ -30,7 +30,6 @@ export interface PostProcessingSettings {
 export interface PluginSettings {
 	chatTargets: ChatTargetRule[];
 	fileNameTemplate: string;
-	sessionRoundSeparator: string;
 	messageHeadingSummaryLength: number;
 	postProcessing: PostProcessingSettings;
 	openNoteAfterSave: boolean;

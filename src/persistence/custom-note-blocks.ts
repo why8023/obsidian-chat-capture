@@ -10,8 +10,8 @@ import {
 	parseMessageHeadingRole,
 } from "../message-anchor";
 
-const CUSTOM_NOTE_START_MARKER = "OBAR-CUSTOM-NOTE-START";
-const CUSTOM_NOTE_END_MARKER = "OBAR-CUSTOM-NOTE-END";
+const CUSTOM_NOTE_START_MARKER = "obar-note-start";
+const CUSTOM_NOTE_END_MARKER = "obar-note-end";
 const CUSTOM_NOTE_CONTEXT_WINDOW = 160;
 const CUSTOM_NOTE_ID_LENGTH = 12;
 const CUSTOM_NOTE_ID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";

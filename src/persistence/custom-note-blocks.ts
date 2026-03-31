@@ -27,12 +27,20 @@ interface CustomNoteBlock {
 
 interface PositionedCustomNoteBlock extends CustomNoteBlock {
 	strippedOffset: number;
+	startsOnOwnLine: boolean;
+	trailingLineBreakCount: number;
 }
 
 interface ResolvedCustomNoteInsertion {
 	offset: number;
 	order: number;
 	fullText: string;
+}
+
+interface InsertionOffsetCandidate {
+	offset: number;
+	prefixLength: number;
+	suffixLength: number;
 }
 
 interface BodySegment {
@@ -152,8 +160,54 @@ function extractCustomNoteBlocks(content: string): CustomNoteBlock[] {
 	return blocks;
 }
 
+function analyzeCustomNoteBlocks(content: string): {
+	strippedContent: string;
+	positionedBlocks: PositionedCustomNoteBlock[];
+} {
+	const blocks = extractCustomNoteBlocks(content);
+	if (blocks.length === 0) {
+		return {
+			strippedContent: content,
+			positionedBlocks: [],
+		};
+	}
+
+	const parts: string[] = [];
+	const positionedBlocks: PositionedCustomNoteBlock[] = [];
+	let cursor = 0;
+	let strippedLength = 0;
+
+	for (const block of blocks) {
+		const startsOnOwnLine =
+			block.start === 0 || content[block.start - 1] === "\n";
+		const trailingLineBreakCount = countLeadingLineBreaks(content.slice(block.end));
+		const prefix = content.slice(cursor, block.start);
+		parts.push(prefix);
+		strippedLength += prefix.length;
+		positionedBlocks.push({
+			...block,
+			strippedOffset: strippedLength,
+			startsOnOwnLine,
+			trailingLineBreakCount,
+		});
+
+		let removalEnd = block.end;
+		if (startsOnOwnLine) {
+			removalEnd += countLeadingLineBreaks(content.slice(removalEnd));
+		}
+
+		cursor = removalEnd;
+	}
+
+	parts.push(content.slice(cursor));
+	return {
+		strippedContent: parts.join(""),
+		positionedBlocks,
+	};
+}
+
 function stripCustomNoteBlocks(content: string): string {
-	return content.replace(createCustomNotePattern(), "");
+	return analyzeCustomNoteBlocks(content).strippedContent;
 }
 
 function buildAnchorCandidates(anchor: string, edge: "start" | "end"): string[] {
@@ -186,58 +240,122 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+function countLeadingLineBreaks(content: string): number {
+	let count = 0;
+
+	while (content[count] === "\n") {
+		count += 1;
+	}
+
+	return count;
+}
+
 function findInsertionOffset(
 	content: string,
 	prefixAnchor: string,
 	suffixAnchor: string,
 	fallbackOffset: number,
+	options?: {
+		minOffset?: number;
+		maxOffset?: number;
+	},
 ): number {
+	const minOffset = clamp(options?.minOffset ?? 0, 0, content.length);
+	const maxOffset = clamp(options?.maxOffset ?? content.length, minOffset, content.length);
 	const prefixCandidates = buildAnchorCandidates(prefixAnchor, "end");
 	const suffixCandidates = buildAnchorCandidates(suffixAnchor, "start");
+	const candidates = new Map<number, InsertionOffsetCandidate>();
 
 	for (const prefixCandidate of prefixCandidates) {
 		const positions = findAllOccurrences(content, prefixCandidate);
-		for (let index = positions.length - 1; index >= 0; index -= 1) {
-			const position = positions[index];
+		for (const position of positions) {
 			if (position === undefined) {
 				continue;
 			}
 
 			const insertionOffset = position + prefixCandidate.length;
+			if (insertionOffset < minOffset || insertionOffset > maxOffset) {
+				continue;
+			}
+
+			const suffixLength = suffixCandidates.reduce((best, suffixCandidate) => {
+				const suffixOffset = content.indexOf(suffixCandidate, insertionOffset);
+				if (suffixOffset === -1 || suffixOffset > maxOffset) {
+					return best;
+				}
+
+				return Math.max(best, suffixCandidate.length);
+			}, 0);
+			const existingCandidate = candidates.get(insertionOffset);
 			if (
-				suffixCandidates.length === 0 ||
-				suffixCandidates.some(
-					(suffixCandidate) =>
-						content.indexOf(suffixCandidate, insertionOffset) !== -1,
-				)
+				!existingCandidate ||
+				existingCandidate.prefixLength + existingCandidate.suffixLength <
+					prefixCandidate.length + suffixLength
 			) {
-				return insertionOffset;
+				candidates.set(insertionOffset, {
+					offset: insertionOffset,
+					prefixLength: prefixCandidate.length,
+					suffixLength,
+				});
 			}
 		}
 	}
 
 	for (const suffixCandidate of suffixCandidates) {
-		const position = content.indexOf(suffixCandidate);
-		if (position !== -1) {
-			return position;
+		const positions = findAllOccurrences(content, suffixCandidate);
+		for (const position of positions) {
+			if (position < minOffset || position > maxOffset) {
+				continue;
+			}
+
+			const existingCandidate = candidates.get(position);
+			if (
+				!existingCandidate ||
+				existingCandidate.prefixLength + existingCandidate.suffixLength <
+					suffixCandidate.length
+			) {
+				candidates.set(position, {
+					offset: position,
+					prefixLength: 0,
+					suffixLength: suffixCandidate.length,
+				});
+			}
 		}
 	}
 
-	return clamp(fallbackOffset, 0, content.length);
+	if (candidates.size > 0) {
+		return [...candidates.values()]
+			.sort((left, right) => {
+				const leftContext = left.prefixLength + left.suffixLength;
+				const rightContext = right.prefixLength + right.suffixLength;
+				if (leftContext !== rightContext) {
+					return rightContext - leftContext;
+				}
+
+				const leftDistance = Math.abs(left.offset - fallbackOffset);
+				const rightDistance = Math.abs(right.offset - fallbackOffset);
+				if (left.prefixLength !== right.prefixLength) {
+					return right.prefixLength - left.prefixLength;
+				}
+
+				if (left.suffixLength !== right.suffixLength) {
+					return right.suffixLength - left.suffixLength;
+				}
+
+				if (left.offset !== right.offset) {
+					return left.offset - right.offset;
+				}
+
+				return leftDistance - rightDistance;
+			})
+			.at(0)?.offset ?? clamp(fallbackOffset, minOffset, maxOffset);
+	}
+
+	return clamp(fallbackOffset, minOffset, maxOffset);
 }
 
 function positionCustomNoteBlocks(segment: string): PositionedCustomNoteBlock[] {
-	const blocks = extractCustomNoteBlocks(segment);
-	let removedLength = 0;
-
-	return blocks.map((block) => {
-		const positionedBlock: PositionedCustomNoteBlock = {
-			...block,
-			strippedOffset: block.start - removedLength,
-		};
-		removedLength += block.fullText.length;
-		return positionedBlock;
-	});
+	return analyzeCustomNoteBlocks(segment).positionedBlocks;
 }
 
 function appendCustomBlocks(content: string, blocks: string[]): string {
@@ -285,6 +403,38 @@ function snapInsertionOffsetToNextLine(content: string, offset: number): number 
 	return nextLineBreak + 1;
 }
 
+function buildCustomNoteInsertionText(
+	content: string,
+	offset: number,
+	block: PositionedCustomNoteBlock,
+): string {
+	if (!block.startsOnOwnLine) {
+		return block.fullText;
+	}
+
+	const prefix =
+		offset > 0 && content[offset - 1] !== "\n"
+			? "\n"
+			: "";
+	const desiredTrailingLineBreakCount =
+		block.trailingLineBreakCount > 0
+			? block.trailingLineBreakCount
+			: offset >= content.length
+				? 1
+				: 0;
+	const existingTrailingLineBreakCount = countLeadingLineBreaks(
+		content.slice(offset),
+	);
+	const suffix = "\n".repeat(
+		Math.max(
+			0,
+			desiredTrailingLineBreakCount - existingTrailingLineBreakCount,
+		),
+	);
+
+	return `${prefix}${block.fullText}${suffix}`;
+}
+
 function restoreSegmentCustomNoteBlocks(
 	oldSegment: string,
 	newSegment: string,
@@ -296,58 +446,54 @@ function restoreSegmentCustomNoteBlocks(
 
 	const strippedOldSegment = stripCustomNoteBlocks(oldSegment);
 	const strippedNewSegment = stripCustomNoteBlocks(newSegment);
-	const insertions = blocks
-		.map((block, order): ResolvedCustomNoteInsertion => {
-			const prefixAnchor = strippedOldSegment.slice(
-				Math.max(0, block.strippedOffset - CUSTOM_NOTE_CONTEXT_WINDOW),
-				block.strippedOffset,
-			);
-			const suffixAnchor = strippedOldSegment.slice(
-				block.strippedOffset,
-				Math.min(
-					strippedOldSegment.length,
-					block.strippedOffset + CUSTOM_NOTE_CONTEXT_WINDOW,
-				),
-			);
-			const fallbackOffset =
-				strippedOldSegment.length === 0
-					? strippedNewSegment.length
-					: Math.round(
-							(block.strippedOffset / strippedOldSegment.length) *
-								strippedNewSegment.length,
+	const insertions: ResolvedCustomNoteInsertion[] = [];
+	let minOffset = 0;
+	let previousOldOffset = 0;
+
+	blocks.forEach((block, order) => {
+		const prefixAnchor = strippedOldSegment.slice(
+			Math.max(0, block.strippedOffset - CUSTOM_NOTE_CONTEXT_WINDOW),
+			block.strippedOffset,
+		);
+		const suffixAnchor = strippedOldSegment.slice(
+			block.strippedOffset,
+			Math.min(
+				strippedOldSegment.length,
+				block.strippedOffset + CUSTOM_NOTE_CONTEXT_WINDOW,
+			),
+		);
+		const remainingOldLength = strippedOldSegment.length - previousOldOffset;
+		const remainingNewLength = strippedNewSegment.length - minOffset;
+		const fallbackOffset =
+			remainingOldLength <= 0
+				? minOffset
+				: minOffset +
+					Math.round(
+						((block.strippedOffset - previousOldOffset) / remainingOldLength) *
+							remainingNewLength,
 					  );
+		let offset = findInsertionOffset(
+			strippedNewSegment,
+			prefixAnchor,
+			suffixAnchor,
+			fallbackOffset,
+			{ minOffset },
+		);
+		if (block.startsOnOwnLine) {
+			offset = snapInsertionOffsetToNextLine(strippedNewSegment, offset);
+		}
 
-			return {
-				offset: findInsertionOffset(
-					strippedNewSegment,
-					prefixAnchor,
-					suffixAnchor,
-					fallbackOffset,
-				),
-				order,
-				fullText: block.fullText,
-			};
-		})
-		.map((insertion, index): ResolvedCustomNoteInsertion => {
-			const block = blocks[index];
-			if (!block) {
-				return insertion;
-			}
-
-			const startsOnOwnLine =
-				block.start === 0 || oldSegment[block.start - 1] === "\n";
-			if (!startsOnOwnLine) {
-				return insertion;
-			}
-
-			return {
-				...insertion,
-				offset: snapInsertionOffsetToNextLine(
-					strippedNewSegment,
-					insertion.offset,
-				),
-			};
+		offset = clamp(offset, minOffset, strippedNewSegment.length);
+		insertions.push({
+			offset,
+			order,
+			fullText: block.startsOnOwnLine
+				? buildCustomNoteInsertionText(strippedNewSegment, offset, block)
+				: block.fullText,
 		});
+		minOffset = offset;
+		previousOldOffset = block.strippedOffset;
+	});
 
 	return applyCustomNoteInsertions(strippedNewSegment, insertions);
 }
@@ -661,7 +807,7 @@ function restoreCustomNoteBlocks(existingBody: string, newBody: string): string 
 		]);
 	}
 
-	const matches = matchMessageBlocks(noteBlocks, newBlocks);
+	const matches = matchMessageBlocks(existingBlocks, newBlocks);
 	const orphanBlocks = [...standaloneBlocks];
 	const replacements: Array<{ block: ParsedMessageBlock; content: string }> = [];
 

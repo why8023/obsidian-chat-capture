@@ -7,8 +7,8 @@ export interface MessageAnchorMetadata {
 	contentHtmlHash: string;
 }
 
-export const OBAR_RECORD_START_MARKER = "OBAR-RECORD-START";
-export const OBAR_RECORD_END_MARKER = "OBAR-RECORD-END";
+export const OBAR_RECORD_START_MARKER = "obar-record-start";
+export const OBAR_RECORD_END_MARKER = "obar-record-end";
 
 const MESSAGE_HEADING_PATTERN = /^# (USER|AI)(?::.*)?$/;
 const TRAILING_THEMATIC_BREAK_PATTERN = /\n{2,}(?:[-*_]\s*){3,}\s*$/;

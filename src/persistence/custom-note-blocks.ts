@@ -29,6 +29,12 @@ interface PositionedCustomNoteBlock extends CustomNoteBlock {
 	strippedOffset: number;
 }
 
+interface ResolvedCustomNoteInsertion {
+	offset: number;
+	order: number;
+	fullText: string;
+}
+
 interface BodySegment {
 	start: number;
 	end: number;
@@ -243,6 +249,42 @@ function appendCustomBlocks(content: string, blocks: string[]): string {
 	return `${content}${separator}${blocks.join("\n\n")}`;
 }
 
+function applyCustomNoteInsertions(
+	content: string,
+	insertions: ResolvedCustomNoteInsertion[],
+): string {
+	let result = content;
+
+	insertions
+		.sort((left, right) => {
+			if (left.offset !== right.offset) {
+				return right.offset - left.offset;
+			}
+
+			return right.order - left.order;
+		})
+		.forEach((insertion) => {
+			result = `${result.slice(0, insertion.offset)}${insertion.fullText}${result.slice(
+				insertion.offset,
+			)}`;
+		});
+
+	return result;
+}
+
+function snapInsertionOffsetToNextLine(content: string, offset: number): number {
+	if (offset <= 0 || content[offset - 1] === "\n") {
+		return offset;
+	}
+
+	const nextLineBreak = content.indexOf("\n", offset);
+	if (nextLineBreak === -1) {
+		return content.length;
+	}
+
+	return nextLineBreak + 1;
+}
+
 function restoreSegmentCustomNoteBlocks(
 	oldSegment: string,
 	newSegment: string,
@@ -253,44 +295,61 @@ function restoreSegmentCustomNoteBlocks(
 	}
 
 	const strippedOldSegment = stripCustomNoteBlocks(oldSegment);
-	let result = newSegment;
+	const strippedNewSegment = stripCustomNoteBlocks(newSegment);
+	const insertions = blocks
+		.map((block, order): ResolvedCustomNoteInsertion => {
+			const prefixAnchor = strippedOldSegment.slice(
+				Math.max(0, block.strippedOffset - CUSTOM_NOTE_CONTEXT_WINDOW),
+				block.strippedOffset,
+			);
+			const suffixAnchor = strippedOldSegment.slice(
+				block.strippedOffset,
+				Math.min(
+					strippedOldSegment.length,
+					block.strippedOffset + CUSTOM_NOTE_CONTEXT_WINDOW,
+				),
+			);
+			const fallbackOffset =
+				strippedOldSegment.length === 0
+					? strippedNewSegment.length
+					: Math.round(
+							(block.strippedOffset / strippedOldSegment.length) *
+								strippedNewSegment.length,
+					  );
 
-	for (let index = blocks.length - 1; index >= 0; index -= 1) {
-		const block = blocks[index];
-		if (!block) {
-			continue;
-		}
+			return {
+				offset: findInsertionOffset(
+					strippedNewSegment,
+					prefixAnchor,
+					suffixAnchor,
+					fallbackOffset,
+				),
+				order,
+				fullText: block.fullText,
+			};
+		})
+		.map((insertion, index): ResolvedCustomNoteInsertion => {
+			const block = blocks[index];
+			if (!block) {
+				return insertion;
+			}
 
-		const prefixAnchor = strippedOldSegment.slice(
-			Math.max(0, block.strippedOffset - CUSTOM_NOTE_CONTEXT_WINDOW),
-			block.strippedOffset,
-		);
-		const suffixAnchor = strippedOldSegment.slice(
-			block.strippedOffset,
-			Math.min(
-				strippedOldSegment.length,
-				block.strippedOffset + CUSTOM_NOTE_CONTEXT_WINDOW,
-			),
-		);
-		const fallbackOffset =
-			strippedOldSegment.length === 0
-				? result.length
-				: Math.round(
-						(block.strippedOffset / strippedOldSegment.length) * result.length,
-				  );
-		const insertionOffset = findInsertionOffset(
-			result,
-			prefixAnchor,
-			suffixAnchor,
-			fallbackOffset,
-		);
+			const startsOnOwnLine =
+				block.start === 0 || oldSegment[block.start - 1] === "\n";
+			if (!startsOnOwnLine) {
+				return insertion;
+			}
 
-		result = `${result.slice(0, insertionOffset)}${block.fullText}${result.slice(
-			insertionOffset,
-		)}`;
-	}
+			return {
+				...insertion,
+				offset: snapInsertionOffsetToNextLine(
+					strippedNewSegment,
+					insertion.offset,
+				),
+			};
+		});
 
-	return result;
+	return applyCustomNoteInsertions(strippedNewSegment, insertions);
 }
 
 function createParsedMessageBlock(options: {

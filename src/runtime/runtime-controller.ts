@@ -644,6 +644,7 @@ export class RuntimeController {
 			!merge.changed && !this.deps.markdownWriter.hasFile(merge.entry.filePath);
 		const shouldWrite =
 			merge.changed || rewriteFrontmatterTimestamps || rewriteMissingFile || forceWrite;
+		const forcedUpdatedAt = forceWrite ? Date.now() : undefined;
 		let persistedEntry =
 			rewriteFrontmatterTimestamps
 				? {
@@ -662,6 +663,12 @@ export class RuntimeController {
 							merge.entry.lastStableMessageCount,
 					}
 				: merge.entry;
+		if (forcedUpdatedAt !== undefined) {
+			persistedEntry = {
+				...persistedEntry,
+				updatedAt: forcedUpdatedAt,
+			};
+		}
 		let writtenFile: TFile | null = null;
 
 		if (shouldWrite) {

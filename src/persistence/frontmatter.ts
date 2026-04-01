@@ -29,6 +29,10 @@ export const OBAR_RECORD_FRONTMATTER_KEYS = {
 } as const;
 
 type RecordFrontmatterField = keyof typeof OBAR_RECORD_FRONTMATTER_KEYS;
+const FRONTMATTER_BLOCK_PATTERN = /^---\n([\s\S]*?)\n---\n?/;
+const MANAGED_FRONTMATTER_KEYS: ReadonlySet<string> = new Set(
+	Object.values(OBAR_RECORD_FRONTMATTER_KEYS),
+);
 
 function yamlScalar(value: number | string): string {
 	if (typeof value === "number") {
@@ -45,6 +49,41 @@ function headingForRole(role: ChatMessageRole): string {
 		default:
 			return "AI";
 	}
+}
+
+function extractFrontmatterBody(frontmatterBlock: string): string {
+	return frontmatterBlock.match(FRONTMATTER_BLOCK_PATTERN)?.[1] ?? "";
+}
+
+function buildFrontmatterBlock(frontmatterBody: string): string {
+	const normalizedBody = frontmatterBody.trim();
+	return normalizedBody ? `---\n${normalizedBody}\n---\n` : "";
+}
+
+function stripManagedFrontmatterEntries(frontmatterBlock: string): string {
+	const body = extractFrontmatterBody(frontmatterBlock);
+	if (!body) {
+		return "";
+	}
+
+	const lines = body.split("\n");
+	const preserved: string[] = [];
+
+	for (let index = 0; index < lines.length; index += 1) {
+		const line = lines[index] ?? "";
+		const keyMatch = line.match(/^([^#\s][^:]*):(?:\s|$)/);
+		const key = keyMatch?.[1];
+		if (!key || !MANAGED_FRONTMATTER_KEYS.has(key)) {
+			preserved.push(line);
+			continue;
+		}
+
+		while (index + 1 < lines.length && /^[ \t]/.test(lines[index + 1] ?? "")) {
+			index += 1;
+		}
+	}
+
+	return preserved.join("\n").trim();
 }
 
 function sanitizeHeadingSummary(value: string): string {
@@ -161,6 +200,46 @@ export function buildRecordFrontmatter(
 	return frontmatter;
 }
 
+export function splitMarkdownDocument(content: string): {
+	frontmatter: string;
+	body: string;
+} {
+	const frontmatter = content.match(FRONTMATTER_BLOCK_PATTERN)?.[0] ?? "";
+	return {
+		frontmatter,
+		body: content.slice(frontmatter.length),
+	};
+}
+
+export function mergeRecordFrontmatter(
+	existingContent: string,
+	renderedContent: string,
+): string {
+	const { frontmatter: existingFrontmatterBlock } =
+		splitMarkdownDocument(existingContent);
+	const { frontmatter: renderedFrontmatterBlock } =
+		splitMarkdownDocument(renderedContent);
+
+	if (!existingFrontmatterBlock) {
+		return renderedFrontmatterBlock;
+	}
+	if (!renderedFrontmatterBlock) {
+		return existingFrontmatterBlock;
+	}
+
+	const preservedFrontmatter = stripManagedFrontmatterEntries(
+		existingFrontmatterBlock,
+	);
+	const renderedFrontmatter = extractFrontmatterBody(
+		renderedFrontmatterBlock,
+	).trim();
+	return buildFrontmatterBlock(
+		[preservedFrontmatter, renderedFrontmatter]
+			.filter((value) => value.length > 0)
+			.join("\n"),
+	);
+}
+
 export function renderRecordBody(
 	snapshot: NormalizedSessionSnapshot,
 	settings: Pick<PluginSettings, "messageHeadingSummaryLength">,
@@ -176,14 +255,12 @@ export function renderRecordMarkdown(
 	entry: SessionIndexEntry,
 	settings: Pick<PluginSettings, "messageHeadingSummaryLength">,
 ): string {
-	const frontmatter = Object.entries(buildRecordFrontmatter(snapshot, entry)).map(
-		([key, value]) => `${key}: ${yamlScalar(value)}`,
-	);
+	const frontmatter = Object.entries(buildRecordFrontmatter(snapshot, entry))
+		.map(([key, value]) => `${key}: ${yamlScalar(value)}`)
+		.join("\n");
 
 	return [
-		"---",
-		...frontmatter,
-		"---",
+		buildFrontmatterBlock(frontmatter).trimEnd(),
 		"",
 		renderRecordBody(snapshot, settings).trimEnd(),
 		"",

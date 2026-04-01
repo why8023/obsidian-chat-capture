@@ -9,6 +9,7 @@ import {
 	parseMessageAnchorMetadata,
 	parseMessageHeadingRole,
 } from "../message-anchor";
+import { mergeRecordFrontmatter } from "./frontmatter";
 
 const CUSTOM_NOTE_START_MARKER = "obar-note-start";
 const CUSTOM_NOTE_END_MARKER = "obar-note-end";
@@ -873,7 +874,11 @@ export function mergeRecordMarkdownWithCustomNotes(options: {
 		return options.renderedContent;
 	}
 
-	const { frontmatter, body: newBody } = splitDocument(options.renderedContent);
+	const frontmatter = mergeRecordFrontmatter(
+		options.existingContent,
+		options.renderedContent,
+	);
+	const { body: newBody } = splitDocument(options.renderedContent);
 	const { body: existingBody } = splitDocument(options.existingContent);
 	return `${frontmatter}${restoreCustomNoteBlocks(existingBody, newBody)}`;
 }

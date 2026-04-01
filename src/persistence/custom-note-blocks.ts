@@ -19,6 +19,10 @@ const CUSTOM_NOTE_ID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const MESSAGE_HEADING_SOURCE = "^# (?:USER|AI)(?::.*)?$";
 const MESSAGE_START_PREFIX = `<!-- ${OBAR_RECORD_START_MARKER}:`;
 const MESSAGE_END_COMMENT = `<!-- ${OBAR_RECORD_END_MARKER} -->`;
+const OBCD_BLOCK_SOURCE =
+	"<!--\\s*obcd-([A-Za-z0-9-]+)-start(?:\\s*:\\s*[\\s\\S]*?)?\\s*-->[\\s\\S]*?<!--\\s*obcd-\\1-end\\s*-->";
+const OBAK_CARD_BLOCK_SOURCE =
+	"<!--\\s*card-start(?:\\s+[\\s\\S]*?)?\\s*-->[\\s\\S]*?<!--\\s*card-end(?:\\s+[\\s\\S]*?)?\\s*-->";
 
 interface CustomNoteBlock {
 	start: number;
@@ -68,6 +72,15 @@ function createCustomNotePattern(): RegExp {
 		`<!--\\s*${CUSTOM_NOTE_START_MARKER}:[A-Za-z0-9-]+\\s*-->([\\s\\S]*?)<!--\\s*${CUSTOM_NOTE_END_MARKER}:[A-Za-z0-9-]+\\s*-->`,
 		"g",
 	);
+}
+
+function createPreservedBlockPatterns(): RegExp[] {
+	return [
+		createCustomNotePattern(),
+		// Preserve third-party plugin blocks verbatim when the note is rewritten.
+		new RegExp(OBCD_BLOCK_SOURCE, "g"),
+		new RegExp(OBAK_CARD_BLOCK_SOURCE, "g"),
+	];
 }
 
 function createMessageHeadingPattern(): RegExp {
@@ -147,17 +160,57 @@ function getBodySegments(body: string): BodySegment[] {
 }
 
 function extractCustomNoteBlocks(content: string): CustomNoteBlock[] {
-	const pattern = createCustomNotePattern();
 	const blocks: CustomNoteBlock[] = [];
-	let match: RegExpExecArray | null = pattern.exec(content);
-	while (match) {
+	const patterns = createPreservedBlockPatterns();
+	let cursor = 0;
+
+	while (cursor < content.length) {
+		const nextBlock = patterns
+			.map((pattern, order) => {
+				pattern.lastIndex = cursor;
+				const match = pattern.exec(content);
+				if (!match) {
+					return null;
+				}
+
+				return {
+					order,
+					block: {
+						start: match.index,
+						end: pattern.lastIndex,
+						fullText: match[0],
+					},
+				};
+			})
+			.filter(
+				(
+					candidate,
+				): candidate is { order: number; block: CustomNoteBlock } =>
+					candidate !== null,
+			)
+			.sort((left, right) => {
+				if (left.block.start !== right.block.start) {
+					return left.block.start - right.block.start;
+				}
+				if (left.order !== right.order) {
+					return left.order - right.order;
+				}
+
+				return right.block.end - left.block.end;
+			})[0]?.block;
+
+		if (!nextBlock) {
+			break;
+		}
+
 		blocks.push({
-			start: match.index,
-			end: pattern.lastIndex,
-			fullText: match[0],
+			start: nextBlock.start,
+			end: nextBlock.end,
+			fullText: nextBlock.fullText,
 		});
-		match = pattern.exec(content);
+		cursor = nextBlock.end;
 	}
+
 	return blocks;
 }
 

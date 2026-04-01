@@ -19,6 +19,10 @@ const CUSTOM_NOTE_ID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const MESSAGE_HEADING_SOURCE = "^# (?:USER|AI)(?::.*)?$";
 const MESSAGE_START_PREFIX = `<!-- ${OBAR_RECORD_START_MARKER}:`;
 const MESSAGE_END_COMMENT = `<!-- ${OBAR_RECORD_END_MARKER} -->`;
+const CUSTOM_NOTE_START_COMMENT_SOURCE =
+	`<!--\\s*${CUSTOM_NOTE_START_MARKER}:[A-Za-z0-9-]+\\s*-->`;
+const CUSTOM_NOTE_END_COMMENT_SOURCE =
+	`<!--\\s*${CUSTOM_NOTE_END_MARKER}:[A-Za-z0-9-]+\\s*-->`;
 const OBCD_START_COMMENT_SOURCE =
 	"<!--\\s*obcd-[A-Za-z0-9-]+-start(?:\\s*:\\s*[\\s\\S]*?)?\\s*-->";
 const OBCD_END_COMMENT_SOURCE = "<!--\\s*obcd-[A-Za-z0-9-]+-end\\s*-->";
@@ -74,7 +78,7 @@ interface CustomNoteBlockCandidate extends CustomNoteBlock {
 
 function createCustomNotePattern(): RegExp {
 	return new RegExp(
-		`<!--\\s*${CUSTOM_NOTE_START_MARKER}:[A-Za-z0-9-]+\\s*-->([\\s\\S]*?)<!--\\s*${CUSTOM_NOTE_END_MARKER}:[A-Za-z0-9-]+\\s*-->`,
+		`${CUSTOM_NOTE_START_COMMENT_SOURCE}([\\s\\S]*?)${CUSTOM_NOTE_END_COMMENT_SOURCE}`,
 		"g",
 	);
 }
@@ -143,6 +147,26 @@ function collectPreservedBlockCandidates(
 				...preservedBlock,
 				priority: 0,
 			});
+		});
+	}
+
+	for (const block of extractBlocksByPattern(
+		content,
+		new RegExp(CUSTOM_NOTE_START_COMMENT_SOURCE, "g"),
+	)) {
+		candidates.push({
+			...block,
+			priority: 0,
+		});
+	}
+
+	for (const block of extractBlocksByPattern(
+		content,
+		new RegExp(CUSTOM_NOTE_END_COMMENT_SOURCE, "g"),
+	)) {
+		candidates.push({
+			...block,
+			priority: 0,
 		});
 	}
 
@@ -479,11 +503,15 @@ function findInsertionOffset(
 					return right.suffixLength - left.suffixLength;
 				}
 
+				if (leftDistance !== rightDistance) {
+					return leftDistance - rightDistance;
+				}
+
 				if (left.offset !== right.offset) {
 					return left.offset - right.offset;
 				}
 
-				return leftDistance - rightDistance;
+				return 0;
 			})
 			.at(0)?.offset ?? clamp(fallbackOffset, minOffset, maxOffset);
 	}
@@ -623,13 +651,19 @@ function restoreKnownCustomNoteBlocks(
 						((block.strippedOffset - previousOldOffset) / remainingOldLength) *
 							remainingNewLength,
 					  );
-		let offset = findInsertionOffset(
-			strippedNewSegment,
-			prefixAnchor,
-			suffixAnchor,
-			fallbackOffset,
-			{ minOffset },
-		);
+		const startsAtBoundary = block.strippedOffset === 0;
+		const endsAtBoundary = block.strippedOffset >= strippedOldSegment.length;
+		let offset = startsAtBoundary
+			? minOffset
+			: endsAtBoundary
+				? strippedNewSegment.length
+				: findInsertionOffset(
+						strippedNewSegment,
+						prefixAnchor,
+						suffixAnchor,
+						fallbackOffset,
+						{ minOffset },
+				  );
 		if (block.startsOnOwnLine) {
 			offset = snapInsertionOffsetToNextLine(strippedNewSegment, offset);
 		}
@@ -938,6 +972,27 @@ function matchMessageBlocks(
 	return matches;
 }
 
+function isStableMessageBlockPair(
+	oldBlock: ParsedMessageBlock,
+	newBlock: ParsedMessageBlock,
+): boolean {
+	if (
+		oldBlock.matchKey &&
+		newBlock.matchKey &&
+		oldBlock.matchKey === newBlock.matchKey &&
+		oldBlock.contentHtmlHash &&
+		newBlock.contentHtmlHash &&
+		oldBlock.contentHtmlHash === newBlock.contentHtmlHash
+	) {
+		return true;
+	}
+
+	return (
+		Boolean(oldBlock.contentHash) &&
+		oldBlock.contentHash === newBlock.contentHash
+	);
+}
+
 function restoreCustomNoteBlocks(existingBody: string, newBody: string): string {
 	const existingBlocks = parseMessageBlocks(existingBody);
 	const newBlocks = parseMessageBlocks(newBody);
@@ -963,6 +1018,26 @@ function restoreCustomNoteBlocks(existingBody: string, newBody: string): string 
 	}
 
 	const matches = matchMessageBlocks(existingBlocks, newBlocks);
+	const hasOnlyStableMatches =
+		existingBlocks.length === newBlocks.length &&
+		matches.size === existingBlocks.length &&
+		existingBlocks.every((oldBlock) => {
+			const matchedIndex = matches.get(oldBlock.index);
+			if (matchedIndex === undefined) {
+				return false;
+			}
+
+			const newBlock = newBlocks[matchedIndex];
+			if (!newBlock) {
+				return false;
+			}
+
+			return isStableMessageBlockPair(oldBlock, newBlock);
+		});
+	if (hasOnlyStableMatches) {
+		return existingBody;
+	}
+
 	const orphanBlocks: string[] = [];
 	const replacements: Array<{ block: ParsedMessageBlock; content: string }> = [];
 
@@ -981,7 +1056,21 @@ function restoreCustomNoteBlocks(existingBody: string, newBody: string): string 
 
 		replacements.push({
 			block: newBlock,
-			content: restoreSegmentCustomNoteBlocks(oldBlock.content, newBlock.content),
+			content:
+				(oldBlock.matchKey &&
+					newBlock.matchKey &&
+					oldBlock.matchKey === newBlock.matchKey &&
+					oldBlock.contentHtmlHash &&
+					newBlock.contentHtmlHash &&
+					oldBlock.contentHtmlHash === newBlock.contentHtmlHash) ||
+				(oldBlock.contentHash &&
+					newBlock.contentHash &&
+					oldBlock.contentHash === newBlock.contentHash)
+					? oldBlock.content
+					: restoreSegmentCustomNoteBlocks(
+							oldBlock.content,
+							newBlock.content,
+					  ),
 		});
 	}
 

@@ -215,10 +215,7 @@ export class RuntimeController {
 
 	async collectCurrentSnapshot(): Promise<CurrentSnapshotResult> {
 		if (this.isTicking) {
-			return {
-				status: "busy",
-				statusMessage: formatObarUiText("waiting for the current capture cycle"),
-			};
+			return this.createBusyResult();
 		}
 
 		this.isTicking = true;
@@ -229,13 +226,7 @@ export class RuntimeController {
 		try {
 			preparedContext = await this.prepareCaptureContext();
 			if (!preparedContext) {
-				const statusMessage = formatObarUiText("no matching Web Viewer found");
-				this.setRuntimeState("idle");
-				this.deps.onStatusChange(statusMessage);
-				return {
-					status: "no-matching-viewer",
-					statusMessage,
-				};
+				return this.handleNoMatchingViewer();
 			}
 
 			captureStage = "collect";
@@ -302,10 +293,7 @@ export class RuntimeController {
 
 	private async captureOnce(forcePersist: boolean): Promise<CaptureRunResult> {
 		if (this.isTicking) {
-			return this.reportResult({
-				status: "busy",
-				statusMessage: formatObarUiText("waiting for the current capture cycle"),
-			});
+			return this.reportResult(this.createBusyResult());
 		}
 		if (
 			!forcePersist &&
@@ -327,17 +315,11 @@ export class RuntimeController {
 			preparedContext = await this.prepareCaptureContext();
 			if (!preparedContext) {
 				this.failureCount = 0;
-				this.setRuntimeState("idle");
 				this.awaitingStability = false;
 				nextDelay = this.deps.viewerManager.isAnyTrackedLeafActive()
 					? Math.min(this.deps.settings().pollIntervalMs, 1_000)
 					: this.backgroundIdleDelay();
-				const statusMessage = formatObarUiText("no matching Web Viewer found");
-				this.deps.onStatusChange(statusMessage);
-				return this.reportResult({
-					status: "no-matching-viewer",
-					statusMessage,
-				});
+				return this.reportResult(this.handleNoMatchingViewer());
 			}
 
 			captureStage = "bootstrap";
@@ -592,6 +574,23 @@ export class RuntimeController {
 		};
 	}
 
+	private createBusyResult(): CaptureIdleResult {
+		return {
+			status: "busy",
+			statusMessage: formatObarUiText("waiting for the current capture cycle"),
+		};
+	}
+
+	private handleNoMatchingViewer(): CaptureIdleResult {
+		const statusMessage = formatObarUiText("no matching Web Viewer found");
+		this.setRuntimeState("idle");
+		this.deps.onStatusChange(statusMessage);
+		return {
+			status: "no-matching-viewer",
+			statusMessage,
+		};
+	}
+
 	private async persistSnapshot(
 		normalized: NormalizedSessionSnapshot,
 		options?: {
@@ -708,7 +707,9 @@ export class RuntimeController {
 		this.setRuntimeState("polling");
 		if (merge.changed || rewriteMissingFile || forceWrite) {
 			const statusMessage = formatObarUiText(
-				`saved ${persistedEntry.lastStableMessageCount} messages`,
+				normalized.hasPartialCapture
+					? `saved ${persistedEntry.lastStableMessageCount} messages (partial capture)`
+					: `saved ${persistedEntry.lastStableMessageCount} messages`,
 			);
 			this.deps.onStatusChange(statusMessage);
 			return {
@@ -717,8 +718,9 @@ export class RuntimeController {
 				filePath: persistedEntry.filePath,
 				messageCount: persistedEntry.lastStableMessageCount,
 				created: merge.created,
-				newMessageCount: merge.newMessages.length,
+				newMessageCount: merge.newMessageCount,
 				sessionTitle: persistedEntry.sessionTitle,
+				partial: normalized.hasPartialCapture,
 			};
 		}
 

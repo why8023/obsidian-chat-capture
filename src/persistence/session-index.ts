@@ -10,8 +10,7 @@ export interface PreparedSessionMerge {
 	entry: SessionIndexEntry;
 	changed: boolean;
 	created: boolean;
-	replaceAll: boolean;
-	newMessages: NormalizedMessage[];
+	newMessageCount: number;
 	replacedKeys: string[];
 	skipReason?: string;
 }
@@ -160,8 +159,7 @@ export class SessionIndex {
 				entry: nextEntry,
 				changed: true,
 				created: true,
-				replaceAll: true,
-				newMessages: snapshot.messages,
+				newMessageCount: snapshot.messages.length,
 				replacedKeys,
 			};
 		}
@@ -175,8 +173,7 @@ export class SessionIndex {
 				entry: nextEntry,
 				changed: false,
 				created: false,
-				replaceAll: false,
-				newMessages: [],
+				newMessageCount: 0,
 				replacedKeys,
 			};
 		}
@@ -189,22 +186,23 @@ export class SessionIndex {
 				},
 				changed: false,
 				created: false,
-				replaceAll: false,
-				newMessages: [],
+				newMessageCount: 0,
 				replacedKeys,
 				skipReason: "snapshot-shorter-than-stored",
 			};
 		}
 
 		const sharedPrefix = countSharedPrefix(existing.messages, snapshot.messages);
-		const replaceAll = sharedPrefix < existing.messages.length;
+		const newMessageCount =
+			sharedPrefix < existing.messages.length
+				? snapshot.messages.length
+				: snapshot.messages.length - sharedPrefix;
 
 		return {
 			entry: nextEntry,
 			changed: true,
 			created: false,
-			replaceAll,
-			newMessages: replaceAll ? snapshot.messages : snapshot.messages.slice(sharedPrefix),
+			newMessageCount,
 			replacedKeys,
 		};
 	}

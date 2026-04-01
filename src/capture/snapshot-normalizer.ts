@@ -1,37 +1,16 @@
-import { createHash } from "crypto";
 import { OBAR_CAPTURE_SOURCE } from "../constants";
 import { buildMessageMatchKey } from "../message-anchor";
+import { hashString, normalizeMarkdown, normalizeText } from "../text-utils";
 import { DefuddleAdapter } from "./defuddle-adapter";
 import type {
 	ChatMessageRole,
+	MessageCaptureState,
 	NormalizedMessage,
 	PageState,
 	NormalizedSessionSnapshot,
 	SessionSnapshot,
 	TurnActionFlags,
 } from "../types";
-
-function hashString(value: string): string {
-	return createHash("sha256").update(value).digest("hex");
-}
-
-function normalizeText(value: string | undefined): string {
-	return String(value ?? "")
-		.replace(/\r\n/g, "\n")
-		.replace(/[\u200B-\u200D\uFEFF]/g, "")
-		.replace(/\u00A0/g, " ")
-		.replace(/[ \t]+\n/g, "\n")
-		.replace(/\n{3,}/g, "\n\n")
-		.trim();
-}
-
-function normalizeMarkdown(value: string | undefined): string {
-	return String(value ?? "")
-		.replace(/\r\n/g, "\n")
-		.replace(/[\u200B-\u200D\uFEFF]/g, "")
-		.replace(/\u00A0/g, " ")
-		.trim();
-}
 
 function normalizeSnippet(value: string | undefined): string {
 	return String(value ?? "").replace(/\r\n/g, "\n").trim();
@@ -115,6 +94,7 @@ export class SnapshotNormalizer {
 				[String(index + 1), role, domKey, previousUid].join("|"),
 			);
 			const actionFlags = normalizeActionFlags(turn.actionFlags);
+			const captureState: MessageCaptureState = turn.captureState ?? "complete";
 
 			normalizedMessages.push({
 				uid,
@@ -130,6 +110,8 @@ export class SnapshotNormalizer {
 				actionFlags,
 				hasCompletionActions:
 					actionFlags.hasCopyButton || actionFlags.hasThumbActions,
+				captureState,
+				captureNotice: turn.captureNotice,
 			});
 		}
 
@@ -166,6 +148,9 @@ export class SnapshotNormalizer {
 			pageState: normalizePageState(snapshot.pageState),
 			messages: normalizedMessages,
 			snapshotHash,
+			hasPartialCapture: normalizedMessages.some(
+				(message) => message.captureState !== "complete",
+			),
 		};
 	}
 }

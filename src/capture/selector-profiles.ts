@@ -22,7 +22,10 @@ export const DEFAULT_SELECTOR_PROFILES: SelectorProfileDefinition[] = [
 		messageCandidates: [
 			"[data-message-author-role]",
 			"article[data-testid*='conversation-turn']",
+			"section[data-testid*='conversation-turn']",
+			"section[id^='conversation-turn']",
 			"main article",
+			"main section",
 			"main [data-testid^='conversation-turn']",
 		],
 		contentRootCandidates: [

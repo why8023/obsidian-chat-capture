@@ -47,6 +47,8 @@ export interface TurnActionFlags {
 	hasThumbActions: boolean;
 }
 
+export type MessageCaptureState = "complete" | "partial";
+
 export interface RawTurnShell {
 	ordinal: number;
 	role: ChatMessageRole;
@@ -56,6 +58,8 @@ export interface RawTurnShell {
 	contentTextHint?: string;
 	rawHtmlSnippet?: string;
 	actionFlags?: Partial<TurnActionFlags>;
+	captureState?: MessageCaptureState;
+	captureNotice?: string;
 }
 
 export interface SessionSnapshot {
@@ -83,6 +87,8 @@ export interface NormalizedMessage {
 	rawHtmlSnippet?: string;
 	actionFlags: TurnActionFlags;
 	hasCompletionActions: boolean;
+	captureState: MessageCaptureState;
+	captureNotice?: string;
 }
 
 export interface NormalizedSessionSnapshot {
@@ -97,6 +103,7 @@ export interface NormalizedSessionSnapshot {
 	pageState: PageState;
 	messages: NormalizedMessage[];
 	snapshotHash: string;
+	hasPartialCapture: boolean;
 }
 
 export interface SessionMessageIndex {
@@ -237,6 +244,7 @@ export interface CaptureSavedResult extends BaseCaptureRunResult {
 	created: boolean;
 	newMessageCount: number;
 	sessionTitle?: string;
+	partial: boolean;
 }
 
 export interface CaptureErrorResult extends BaseCaptureRunResult {

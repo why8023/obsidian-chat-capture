@@ -27,9 +27,10 @@ export class CaptureNoticeManager {
 
 	private showSuccess(result: CaptureSavedResult): void {
 		const action = result.created ? "Synced" : "Updated";
+		const suffix = result.partial ? " Partial capture." : "";
 		new Notice(
 			formatObarUiText(
-				`${action} ${result.filePath} (${result.messageCount} messages).`,
+				`${action} ${result.filePath} (${result.messageCount} messages).${suffix}`,
 			),
 		);
 	}

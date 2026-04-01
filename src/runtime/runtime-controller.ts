@@ -412,7 +412,9 @@ export class RuntimeController {
 			}
 
 			captureStage = "write-snapshot";
-			const persistResult = await this.persistSnapshot(normalized);
+			const persistResult = await this.persistSnapshot(normalized, {
+				forceWrite: forcePersist,
+			});
 			this.failureCount = 0;
 			this.awaitingStability = false;
 			return this.reportResult(persistResult);
@@ -592,7 +594,11 @@ export class RuntimeController {
 
 	private async persistSnapshot(
 		normalized: NormalizedSessionSnapshot,
+		options?: {
+			forceWrite?: boolean;
+		},
 	): Promise<CaptureRunResult> {
+		const forceWrite = options?.forceWrite ?? false;
 		if (!normalized.sessionId) {
 			const statusMessage = formatObarUiText("waiting for session id");
 			this.deps.onStatusChange(statusMessage);
@@ -629,12 +635,15 @@ export class RuntimeController {
 		}
 
 		const rewriteFrontmatterTimestamps =
+			!forceWrite &&
 			!merge.changed &&
 			(await this.deps.markdownWriter.needsFrontmatterTimestampRewrite(
 				merge.entry.filePath,
 			));
 		const rewriteMissingFile =
 			!merge.changed && !this.deps.markdownWriter.hasFile(merge.entry.filePath);
+		const shouldWrite =
+			merge.changed || rewriteFrontmatterTimestamps || rewriteMissingFile || forceWrite;
 		let persistedEntry =
 			rewriteFrontmatterTimestamps
 				? {
@@ -655,7 +664,7 @@ export class RuntimeController {
 				: merge.entry;
 		let writtenFile: TFile | null = null;
 
-		if (merge.changed || rewriteFrontmatterTimestamps || rewriteMissingFile) {
+		if (shouldWrite) {
 			const previousTitle =
 				existingEntry?.sessionTitle ?? existingRecord?.sessionTitle;
 			persistedEntry = {
@@ -679,10 +688,10 @@ export class RuntimeController {
 				});
 			}
 		}
-		if (merge.changed || merge.replacedKeys.length > 0 || rewriteMissingFile) {
+		if (merge.changed || merge.replacedKeys.length > 0 || rewriteMissingFile || forceWrite) {
 			await this.deps.sessionIndex.commit(persistedEntry, merge.replacedKeys);
 		}
-		if (merge.changed && writtenFile) {
+		if (writtenFile && (merge.changed || forceWrite)) {
 			const noteOpenedByPostProcessor = await this.deps.postProcessor.run(writtenFile);
 			if (this.deps.settings().openNoteAfterSave && !noteOpenedByPostProcessor) {
 				await this.deps.openNote(writtenFile);
@@ -690,7 +699,7 @@ export class RuntimeController {
 		}
 
 		this.setRuntimeState("polling");
-		if (merge.changed || rewriteMissingFile) {
+		if (merge.changed || rewriteMissingFile || forceWrite) {
 			const statusMessage = formatObarUiText(
 				`saved ${persistedEntry.lastStableMessageCount} messages`,
 			);

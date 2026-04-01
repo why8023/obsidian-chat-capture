@@ -60,30 +60,41 @@ function buildFrontmatterBlock(frontmatterBody: string): string {
 	return normalizedBody ? `---\n${normalizedBody}\n---\n` : "";
 }
 
-function stripManagedFrontmatterEntries(frontmatterBlock: string): string {
+function extractTopLevelYamlKey(line: string): string | null {
+	const keyMatch = line.match(/^([^#\s][^:]*):(?:\s|$)/);
+	return keyMatch?.[1] ?? null;
+}
+
+function splitFrontmatterIntoBlocks(
+	frontmatterBlock: string,
+): Array<{ key: string | null; block: string }> {
 	const body = extractFrontmatterBody(frontmatterBlock);
 	if (!body) {
-		return "";
+		return [];
 	}
 
 	const lines = body.split("\n");
-	const preserved: string[] = [];
+	const blocks: Array<{ key: string | null; block: string }> = [];
 
-	for (let index = 0; index < lines.length; index += 1) {
+	for (let index = 0; index < lines.length; ) {
 		const line = lines[index] ?? "";
-		const keyMatch = line.match(/^([^#\s][^:]*):(?:\s|$)/);
-		const key = keyMatch?.[1];
-		if (!key || !MANAGED_FRONTMATTER_KEYS.has(key)) {
-			preserved.push(line);
-			continue;
+		const key = extractTopLevelYamlKey(line);
+		let blockEnd = index + 1;
+
+		if (key) {
+			while (blockEnd < lines.length && /^[ \t]/.test(lines[blockEnd] ?? "")) {
+				blockEnd += 1;
+			}
 		}
 
-		while (index + 1 < lines.length && /^[ \t]/.test(lines[index + 1] ?? "")) {
-			index += 1;
-		}
+		blocks.push({
+			key,
+			block: lines.slice(index, blockEnd).join("\n"),
+		});
+		index = blockEnd;
 	}
 
-	return preserved.join("\n").trim();
+	return blocks;
 }
 
 function sanitizeHeadingSummary(value: string): string {
@@ -227,17 +238,52 @@ export function mergeRecordFrontmatter(
 		return existingFrontmatterBlock;
 	}
 
-	const preservedFrontmatter = stripManagedFrontmatterEntries(
-		existingFrontmatterBlock,
-	);
-	const renderedFrontmatter = extractFrontmatterBody(
-		renderedFrontmatterBlock,
-	).trim();
-	return buildFrontmatterBlock(
-		[preservedFrontmatter, renderedFrontmatter]
-			.filter((value) => value.length > 0)
-			.join("\n"),
-	);
+	const renderedManagedBlocks = new Map<string, string>();
+	const renderedManagedKeysInOrder: string[] = [];
+
+	for (const block of splitFrontmatterIntoBlocks(renderedFrontmatterBlock)) {
+		if (!block.key || !MANAGED_FRONTMATTER_KEYS.has(block.key)) {
+			continue;
+		}
+
+		renderedManagedBlocks.set(block.key, block.block);
+		renderedManagedKeysInOrder.push(block.key);
+	}
+
+	const seenManagedKeys = new Set<string>();
+	const mergedBlocks: string[] = [];
+
+	for (const block of splitFrontmatterIntoBlocks(existingFrontmatterBlock)) {
+		if (!block.key || !MANAGED_FRONTMATTER_KEYS.has(block.key)) {
+			mergedBlocks.push(block.block);
+			continue;
+		}
+
+		if (seenManagedKeys.has(block.key)) {
+			continue;
+		}
+
+		const renderedBlock = renderedManagedBlocks.get(block.key);
+		if (!renderedBlock) {
+			continue;
+		}
+
+		mergedBlocks.push(renderedBlock);
+		seenManagedKeys.add(block.key);
+	}
+
+	for (const key of renderedManagedKeysInOrder) {
+		if (seenManagedKeys.has(key)) {
+			continue;
+		}
+
+		const renderedBlock = renderedManagedBlocks.get(key);
+		if (renderedBlock) {
+			mergedBlocks.push(renderedBlock);
+		}
+	}
+
+	return buildFrontmatterBlock(mergedBlocks.join("\n"));
 }
 
 export function renderRecordBody(

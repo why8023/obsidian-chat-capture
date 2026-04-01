@@ -19,8 +19,9 @@ const CUSTOM_NOTE_ID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const MESSAGE_HEADING_SOURCE = "^# (?:USER|AI)(?::.*)?$";
 const MESSAGE_START_PREFIX = `<!-- ${OBAR_RECORD_START_MARKER}:`;
 const MESSAGE_END_COMMENT = `<!-- ${OBAR_RECORD_END_MARKER} -->`;
-const OBCD_BLOCK_SOURCE =
-	"<!--\\s*obcd-([A-Za-z0-9-]+)-start(?:\\s*:\\s*[\\s\\S]*?)?\\s*-->[\\s\\S]*?<!--\\s*obcd-\\1-end\\s*-->";
+const OBCD_START_COMMENT_SOURCE =
+	"<!--\\s*obcd-[A-Za-z0-9-]+-start(?:\\s*:\\s*[\\s\\S]*?)?\\s*-->";
+const OBCD_END_COMMENT_SOURCE = "<!--\\s*obcd-[A-Za-z0-9-]+-end\\s*-->";
 const OBAK_CARD_BLOCK_SOURCE =
 	"<!--\\s*card-start(?:\\s+[\\s\\S]*?)?\\s*-->[\\s\\S]*?<!--\\s*card-end(?:\\s+[\\s\\S]*?)?\\s*-->";
 
@@ -67,6 +68,10 @@ interface ParsedMessageBlock {
 	customNoteBlocks: CustomNoteBlock[];
 }
 
+interface CustomNoteBlockCandidate extends CustomNoteBlock {
+	priority: number;
+}
+
 function createCustomNotePattern(): RegExp {
 	return new RegExp(
 		`<!--\\s*${CUSTOM_NOTE_START_MARKER}:[A-Za-z0-9-]+\\s*-->([\\s\\S]*?)<!--\\s*${CUSTOM_NOTE_END_MARKER}:[A-Za-z0-9-]+\\s*-->`,
@@ -74,13 +79,113 @@ function createCustomNotePattern(): RegExp {
 	);
 }
 
-function createPreservedBlockPatterns(): RegExp[] {
+function extractBlocksByPattern(content: string, pattern: RegExp): CustomNoteBlock[] {
+	const blocks: CustomNoteBlock[] = [];
+	pattern.lastIndex = 0;
+	let match: RegExpExecArray | null = pattern.exec(content);
+	while (match) {
+		blocks.push({
+			start: match.index,
+			end: pattern.lastIndex,
+			fullText: match[0],
+		});
+		match = pattern.exec(content);
+	}
+
+	return blocks;
+}
+
+function containsManagedMessageMarkers(content: string): boolean {
+	return (
+		content.includes(MESSAGE_START_PREFIX) ||
+		content.includes(MESSAGE_END_COMMENT)
+	);
+}
+
+function splitWrappedBlockIntoBoundaryComments(
+	block: CustomNoteBlock,
+): CustomNoteBlock[] {
+	const startCommentEnd = block.fullText.indexOf("-->");
+	const endCommentStart = block.fullText.lastIndexOf("<!--");
+	if (
+		startCommentEnd === -1 ||
+		endCommentStart === -1 ||
+		endCommentStart <= startCommentEnd + 3
+	) {
+		return [block];
+	}
+
 	return [
-		createCustomNotePattern(),
-		// Preserve third-party plugin blocks verbatim when the note is rewritten.
-		new RegExp(OBCD_BLOCK_SOURCE, "g"),
-		new RegExp(OBAK_CARD_BLOCK_SOURCE, "g"),
+		{
+			start: block.start,
+			end: block.start + startCommentEnd + 3,
+			fullText: block.fullText.slice(0, startCommentEnd + 3),
+		},
+		{
+			start: block.start + endCommentStart,
+			end: block.end,
+			fullText: block.fullText.slice(endCommentStart),
+		},
 	];
+}
+
+function collectPreservedBlockCandidates(
+	content: string,
+): CustomNoteBlockCandidate[] {
+	const candidates: CustomNoteBlockCandidate[] = [];
+
+	for (const block of extractBlocksByPattern(content, createCustomNotePattern())) {
+		const preservedBlocks = containsManagedMessageMarkers(block.fullText)
+			? splitWrappedBlockIntoBoundaryComments(block)
+			: [block];
+		preservedBlocks.forEach((preservedBlock) => {
+			candidates.push({
+				...preservedBlock,
+				priority: 0,
+			});
+		});
+	}
+
+	for (const block of extractBlocksByPattern(
+		content,
+		new RegExp(OBAK_CARD_BLOCK_SOURCE, "g"),
+	)) {
+		candidates.push({
+			...block,
+			priority: 1,
+		});
+	}
+
+	for (const block of extractBlocksByPattern(
+		content,
+		new RegExp(OBCD_START_COMMENT_SOURCE, "g"),
+	)) {
+		candidates.push({
+			...block,
+			priority: 2,
+		});
+	}
+
+	for (const block of extractBlocksByPattern(
+		content,
+		new RegExp(OBCD_END_COMMENT_SOURCE, "g"),
+	)) {
+		candidates.push({
+			...block,
+			priority: 2,
+		});
+	}
+
+	return candidates.sort((left, right) => {
+		if (left.start !== right.start) {
+			return left.start - right.start;
+		}
+		if (left.priority !== right.priority) {
+			return left.priority - right.priority;
+		}
+
+		return right.end - left.end;
+	});
 }
 
 function createMessageHeadingPattern(): RegExp {
@@ -161,64 +266,31 @@ function getBodySegments(body: string): BodySegment[] {
 
 function extractCustomNoteBlocks(content: string): CustomNoteBlock[] {
 	const blocks: CustomNoteBlock[] = [];
-	const patterns = createPreservedBlockPatterns();
 	let cursor = 0;
 
-	while (cursor < content.length) {
-		const nextBlock = patterns
-			.map((pattern, order) => {
-				pattern.lastIndex = cursor;
-				const match = pattern.exec(content);
-				if (!match) {
-					return null;
-				}
-
-				return {
-					order,
-					block: {
-						start: match.index,
-						end: pattern.lastIndex,
-						fullText: match[0],
-					},
-				};
-			})
-			.filter(
-				(
-					candidate,
-				): candidate is { order: number; block: CustomNoteBlock } =>
-					candidate !== null,
-			)
-			.sort((left, right) => {
-				if (left.block.start !== right.block.start) {
-					return left.block.start - right.block.start;
-				}
-				if (left.order !== right.order) {
-					return left.order - right.order;
-				}
-
-				return right.block.end - left.block.end;
-			})[0]?.block;
-
-		if (!nextBlock) {
-			break;
+	for (const candidate of collectPreservedBlockCandidates(content)) {
+		if (candidate.start < cursor) {
+			continue;
 		}
 
 		blocks.push({
-			start: nextBlock.start,
-			end: nextBlock.end,
-			fullText: nextBlock.fullText,
+			start: candidate.start,
+			end: candidate.end,
+			fullText: candidate.fullText,
 		});
-		cursor = nextBlock.end;
+		cursor = candidate.end;
 	}
 
 	return blocks;
 }
 
-function analyzeCustomNoteBlocks(content: string): {
+function analyzeKnownCustomNoteBlocks(
+	content: string,
+	blocks: CustomNoteBlock[],
+): {
 	strippedContent: string;
 	positionedBlocks: PositionedCustomNoteBlock[];
 } {
-	const blocks = extractCustomNoteBlocks(content);
 	if (blocks.length === 0) {
 		return {
 			strippedContent: content,
@@ -232,6 +304,10 @@ function analyzeCustomNoteBlocks(content: string): {
 	let strippedLength = 0;
 
 	for (const block of blocks) {
+		if (block.start < cursor) {
+			continue;
+		}
+
 		const startsOnOwnLine =
 			block.start === 0 || content[block.start - 1] === "\n";
 		const trailingLineBreakCount = countLeadingLineBreaks(content.slice(block.end));
@@ -258,6 +334,13 @@ function analyzeCustomNoteBlocks(content: string): {
 		strippedContent: parts.join(""),
 		positionedBlocks,
 	};
+}
+
+function analyzeCustomNoteBlocks(content: string): {
+	strippedContent: string;
+	positionedBlocks: PositionedCustomNoteBlock[];
+} {
+	return analyzeKnownCustomNoteBlocks(content, extractCustomNoteBlocks(content));
 }
 
 function stripCustomNoteBlocks(content: string): string {
@@ -408,10 +491,6 @@ function findInsertionOffset(
 	return clamp(fallbackOffset, minOffset, maxOffset);
 }
 
-function positionCustomNoteBlocks(segment: string): PositionedCustomNoteBlock[] {
-	return analyzeCustomNoteBlocks(segment).positionedBlocks;
-}
-
 function appendCustomBlocks(content: string, blocks: string[]): string {
 	if (blocks.length === 0) {
 		return content;
@@ -493,18 +572,36 @@ function restoreSegmentCustomNoteBlocks(
 	oldSegment: string,
 	newSegment: string,
 ): string {
-	const blocks = positionCustomNoteBlocks(oldSegment);
-	if (blocks.length === 0) {
+	return restoreKnownCustomNoteBlocks(
+		oldSegment,
+		newSegment,
+		extractCustomNoteBlocks(oldSegment),
+	);
+}
+
+function restoreKnownCustomNoteBlocks(
+	oldSegment: string,
+	newSegment: string,
+	blocks: CustomNoteBlock[],
+	options?: {
+		stripNewSegment?: boolean;
+	},
+): string {
+	const analyzedOldSegment = analyzeKnownCustomNoteBlocks(oldSegment, blocks);
+	if (analyzedOldSegment.positionedBlocks.length === 0) {
 		return newSegment;
 	}
 
-	const strippedOldSegment = stripCustomNoteBlocks(oldSegment);
-	const strippedNewSegment = stripCustomNoteBlocks(newSegment);
+	const strippedOldSegment = analyzedOldSegment.strippedContent;
+	const strippedNewSegment =
+		options?.stripNewSegment === false
+			? newSegment
+			: stripCustomNoteBlocks(newSegment);
 	const insertions: ResolvedCustomNoteInsertion[] = [];
 	let minOffset = 0;
 	let previousOldOffset = 0;
 
-	blocks.forEach((block, order) => {
+	analyzedOldSegment.positionedBlocks.forEach((block, order) => {
 		const prefixAnchor = strippedOldSegment.slice(
 			Math.max(0, block.strippedOffset - CUSTOM_NOTE_CONTEXT_WINDOW),
 			block.strippedOffset,
@@ -680,7 +777,7 @@ function isBlockContainedInRange(
 function collectStandaloneCustomNoteBlocks(
 	body: string,
 	messageBlocks: ParsedMessageBlock[],
-): string[] {
+): CustomNoteBlock[] {
 	const customBlocks = extractCustomNoteBlocks(body);
 	return customBlocks
 		.filter(
@@ -688,8 +785,7 @@ function collectStandaloneCustomNoteBlocks(
 				!messageBlocks.some((messageBlock) =>
 					isBlockContainedInRange(block, messageBlock.start, messageBlock.end),
 				),
-		)
-		.map((block) => block.fullText);
+		);
 }
 
 function pairUniqueByFingerprint(
@@ -849,20 +945,25 @@ function restoreCustomNoteBlocks(existingBody: string, newBody: string): string 
 	const noteBlocks = existingBlocks.filter((block) => block.customNoteBlocks.length > 0);
 
 	if (noteBlocks.length === 0) {
-		return appendCustomBlocks(newBody, standaloneBlocks);
+		return restoreKnownCustomNoteBlocks(existingBody, newBody, standaloneBlocks);
 	}
 
 	if (newBlocks.length === 0) {
-		return appendCustomBlocks(newBody, [
-			...standaloneBlocks,
-			...noteBlocks.flatMap((block) =>
+		const restoredStandaloneBlocks = restoreKnownCustomNoteBlocks(
+			existingBody,
+			newBody,
+			standaloneBlocks,
+		);
+		return appendCustomBlocks(
+			restoredStandaloneBlocks,
+			noteBlocks.flatMap((block) =>
 				block.customNoteBlocks.map((note) => note.fullText),
 			),
-		]);
+		);
 	}
 
 	const matches = matchMessageBlocks(existingBlocks, newBlocks);
-	const orphanBlocks = [...standaloneBlocks];
+	const orphanBlocks: string[] = [];
 	const replacements: Array<{ block: ParsedMessageBlock; content: string }> = [];
 
 	for (const oldBlock of noteBlocks) {
@@ -893,6 +994,9 @@ function restoreCustomNoteBlocks(existingBody: string, newBody: string): string 
 			)}`;
 		});
 
+	result = restoreKnownCustomNoteBlocks(existingBody, result, standaloneBlocks, {
+		stripNewSegment: false,
+	});
 	return appendCustomBlocks(result, orphanBlocks);
 }
 

@@ -44,6 +44,7 @@ interface PositionedCustomNoteBlock extends CustomNoteBlock {
 interface ResolvedCustomNoteInsertion {
 	offset: number;
 	order: number;
+	block: PositionedCustomNoteBlock;
 	fullText: string;
 }
 
@@ -411,6 +412,16 @@ function countLeadingLineBreaks(content: string): number {
 	return count;
 }
 
+function countTrailingLineBreaks(content: string): number {
+	let count = 0;
+
+	while (content[content.length - count - 1] === "\n") {
+		count += 1;
+	}
+
+	return count;
+}
+
 function findInsertionOffset(
 	content: string,
 	prefixAnchor: string,
@@ -596,6 +607,46 @@ function buildCustomNoteInsertionText(
 	return `${prefix}${block.fullText}${suffix}`;
 }
 
+function normalizeSameOffsetInsertionSpacing(
+	insertions: ResolvedCustomNoteInsertion[],
+): ResolvedCustomNoteInsertion[] {
+	const orderedInsertions = [...insertions].sort((left, right) => {
+		if (left.offset !== right.offset) {
+			return left.offset - right.offset;
+		}
+
+		return left.order - right.order;
+	});
+
+	for (let index = 0; index < orderedInsertions.length - 1; index += 1) {
+		const current = orderedInsertions[index];
+		const next = orderedInsertions[index + 1];
+		if (!current || !next || current.offset !== next.offset) {
+			continue;
+		}
+
+		const requiredLineBreakCount = next.block.startsOnOwnLine
+			? Math.max(1, current.block.trailingLineBreakCount)
+			: current.block.trailingLineBreakCount;
+		if (requiredLineBreakCount <= 0) {
+			continue;
+		}
+
+		const existingLineBreakCount =
+			countTrailingLineBreaks(current.fullText) +
+			countLeadingLineBreaks(next.fullText);
+		if (existingLineBreakCount >= requiredLineBreakCount) {
+			continue;
+		}
+
+		current.fullText += "\n".repeat(
+			requiredLineBreakCount - existingLineBreakCount,
+		);
+	}
+
+	return insertions;
+}
+
 function restoreSegmentCustomNoteBlocks(
 	oldSegment: string,
 	newSegment: string,
@@ -672,6 +723,7 @@ function restoreKnownCustomNoteBlocks(
 		insertions.push({
 			offset,
 			order,
+			block,
 			fullText: block.startsOnOwnLine
 				? buildCustomNoteInsertionText(strippedNewSegment, offset, block)
 				: block.fullText,
@@ -680,7 +732,10 @@ function restoreKnownCustomNoteBlocks(
 		previousOldOffset = block.strippedOffset;
 	});
 
-	return applyCustomNoteInsertions(strippedNewSegment, insertions);
+	return applyCustomNoteInsertions(
+		strippedNewSegment,
+		normalizeSameOffsetInsertionSpacing(insertions),
+	);
 }
 
 function createParsedMessageBlock(options: {

@@ -6,10 +6,8 @@ import {
 	type CachedMetadata,
 } from "obsidian";
 import { Logger } from "../debug/logger";
-import { getTrackedSaveFolders } from "../settings/chat-targets";
 import type {
 	NormalizedSessionSnapshot,
-	PluginSettings,
 	RecordEntry,
 	SessionIndexEntry,
 } from "../types";
@@ -114,7 +112,6 @@ export class RecordIndex {
 
 	constructor(
 		private readonly app: App,
-		private readonly getSettings: () => PluginSettings,
 		private readonly logger: Logger,
 	) {}
 
@@ -123,14 +120,13 @@ export class RecordIndex {
 		this.pendingMetadataPaths.clear();
 		this.clearIdentityIndexes();
 
-		for (const file of this.collectTrackedMarkdownFiles()) {
+		for (const file of this.collectVaultMarkdownFiles()) {
 			this.reindexFile(file);
 		}
 
 		this.logger.info("Record index rebuilt", {
 			count: this.byFilePath.size,
 			pendingMetadataCount: this.pendingMetadataPaths.size,
-			saveFolders: getTrackedSaveFolders(this.getSettings()),
 		});
 	}
 
@@ -195,11 +191,6 @@ export class RecordIndex {
 
 	handleVaultTouch(file: TAbstractFile): void {
 		if (file instanceof TFolder) {
-			if (!this.isTrackedPath(file.path)) {
-				this.removePathTree(file.path);
-				return;
-			}
-
 			for (const child of this.collectMarkdownFilesFromFolder(file)) {
 				this.reindexFile(child);
 			}
@@ -207,11 +198,6 @@ export class RecordIndex {
 		}
 
 		if (!isMarkdownFile(file)) {
-			return;
-		}
-
-		if (!this.isTrackedPath(file.path)) {
-			this.removePath(file.path);
 			return;
 		}
 
@@ -228,11 +214,6 @@ export class RecordIndex {
 	}
 
 	handleMetadataChanged(file: TFile, cache: CachedMetadata): void {
-		if (!this.isTrackedPath(file.path)) {
-			this.removePath(file.path);
-			return;
-		}
-
 		this.upsertOrRemoveFromCache(file, cache);
 	}
 
@@ -240,34 +221,10 @@ export class RecordIndex {
 		this.removePath(file.path);
 	}
 
-	private collectTrackedMarkdownFiles(): TFile[] {
-		const trackedFolders = getTrackedSaveFolders(this.getSettings());
-		if (trackedFolders.length === 0) {
-			return [];
-		}
-
-		const collected = new Map<string, TFile>();
-		let foundExistingRoot = false;
-
-		for (const folder of trackedFolders) {
-			const root = this.app.vault.getFolderByPath(folder);
-			if (!root) {
-				continue;
-			}
-
-			foundExistingRoot = true;
-			for (const file of this.collectMarkdownFilesFromFolder(root)) {
-				collected.set(file.path, file);
-			}
-		}
-
-		if (!foundExistingRoot) {
-			return this.app.vault
-				.getMarkdownFiles()
-				.filter((file) => this.isTrackedPath(file.path));
-		}
-
-		return [...collected.values()];
+	private collectVaultMarkdownFiles(): TFile[] {
+		// Match records by managed frontmatter across the whole vault so moved notes
+		// stay associated with the same session even after leaving the save folder.
+		return this.app.vault.getMarkdownFiles();
 	}
 
 	private collectMarkdownFilesFromFolder(folder: TFolder): TFile[] {
@@ -283,13 +240,6 @@ export class RecordIndex {
 		}
 		return files;
 	}
-
-	private isTrackedPath(path: string): boolean {
-		return getTrackedSaveFolders(this.getSettings()).some(
-			(folder) => path === folder || path.startsWith(`${folder}/`),
-		);
-	}
-
 	private reindexFile(file: TFile): void {
 		const cache = this.app.metadataCache.getFileCache(file);
 		if (!cache) {

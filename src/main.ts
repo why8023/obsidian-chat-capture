@@ -58,7 +58,6 @@ export default class ObarPlugin extends Plugin {
 		);
 		this.recordIndex = new RecordIndex(
 			this.app,
-			() => this.settings,
 			this.logger,
 		);
 		await this.recordIndex.rebuild();

@@ -5,7 +5,17 @@ import type { ChatTargetRule } from "../types";
 import { CommandPickerModal } from "./command-picker-modal";
 import { getSettingsTabCopy, type SettingsTabCopy } from "./localization";
 
+type SettingsPageTabId = "general" | "output" | "capture" | "debug";
+
+interface SettingsPageTabDefinition {
+	id: SettingsPageTabId;
+	label: string;
+	description: string;
+}
+
 export class ObarSettingTab extends PluginSettingTab {
+	private activeTab: SettingsPageTabId = "general";
+
 	constructor(app: App, private readonly plugin: ObarPlugin) {
 		super(app, plugin);
 	}
@@ -15,18 +25,151 @@ export class ObarSettingTab extends PluginSettingTab {
 		const copy = getSettingsTabCopy();
 		containerEl.empty();
 
-		this.addSectionHeading(copy.sections.general);
-		this.addChatTargetSettings(copy);
+		const contentEl = this.renderSettingsPageChrome(containerEl, copy);
+		this.renderActiveTab(contentEl, copy);
+	}
+
+	private getSettingsPageTabs(copy: SettingsTabCopy): readonly SettingsPageTabDefinition[] {
+		return [
+			{
+				id: "general",
+				label: copy.tabs.general.label,
+				description: copy.tabs.general.description,
+			},
+			{
+				id: "output",
+				label: copy.tabs.output.label,
+				description: copy.tabs.output.description,
+			},
+			{
+				id: "capture",
+				label: copy.tabs.capture.label,
+				description: copy.tabs.capture.description,
+			},
+			{
+				id: "debug",
+				label: copy.tabs.debug.label,
+				description: copy.tabs.debug.description,
+			},
+		];
+	}
+
+	private renderSettingsPageChrome(
+		containerEl: HTMLElement,
+		copy: SettingsTabCopy,
+	): HTMLDivElement {
+		containerEl.classList.add("obar-settings-root");
+
+		const tabs = this.getSettingsPageTabs(copy);
+		const activeTab = tabs.find((tab) => tab.id === this.activeTab) ?? tabs[0]!;
+		this.activeTab = activeTab.id;
+
+		const pageEl = containerEl.createDiv({ cls: "obar-settings-page" });
+		const heroEl = pageEl.createDiv({ cls: "obar-settings-hero" });
+		const titleSetting = new Setting(heroEl).setName(copy.page.title).setHeading();
+		titleSetting.settingEl.classList.add("obar-settings-page-heading");
+		titleSetting.settingEl
+			.querySelector<HTMLElement>(".setting-item-name")
+			?.classList.add("obar-settings-page-title");
+		heroEl.createEl("p", {
+			cls: "obar-settings-page-description",
+			text: copy.page.description,
+		});
+
+		const tabsEl = pageEl.createDiv({ cls: "obar-settings-tabs-nav" });
+		tabsEl.setAttribute("role", "tablist");
+
+		tabs.forEach((tab) => {
+			const buttonEl = tabsEl.createEl("button", {
+				cls: "obar-settings-tab-button",
+				text: tab.label,
+			});
+			buttonEl.type = "button";
+			buttonEl.setAttribute("role", "tab");
+			buttonEl.setAttribute("aria-selected", String(tab.id === activeTab.id));
+
+			if (tab.id === activeTab.id) {
+				buttonEl.classList.add("is-active");
+			}
+
+			buttonEl.addEventListener("click", () => {
+				if (this.activeTab === tab.id) {
+					return;
+				}
+
+				this.activeTab = tab.id;
+				this.display();
+			});
+		});
+
+		pageEl.createEl("p", {
+			cls: "obar-settings-tab-description",
+			text: activeTab.description,
+		});
+
+		return pageEl.createDiv({ cls: "obar-settings-tab-content" });
+	}
+
+	private renderSettingsPanel(
+		containerEl: HTMLElement,
+		renderContent: (panelBodyEl: HTMLDivElement) => void,
+	): void {
+		const panelEl = containerEl.createDiv({ cls: "obar-settings-panel" });
+		const panelBodyEl = panelEl.createDiv({ cls: "obar-settings-panel-body" });
+		renderContent(panelBodyEl);
+	}
+
+	private renderActiveTab(containerEl: HTMLElement, copy: SettingsTabCopy): void {
+		switch (this.activeTab) {
+			case "general":
+				this.renderSettingsPanel(containerEl, (panelBodyEl) => {
+					this.renderGeneralSettingsSection(panelBodyEl, copy);
+				});
+				break;
+			case "output":
+				this.renderSettingsPanel(containerEl, (panelBodyEl) => {
+					this.renderOutputSettingsSection(panelBodyEl, copy);
+				});
+				this.renderSettingsPanel(containerEl, (panelBodyEl) => {
+					this.renderPostProcessingSettingsSection(panelBodyEl, copy);
+				});
+				break;
+			case "capture":
+				this.renderSettingsPanel(containerEl, (panelBodyEl) => {
+					this.renderCaptureSettingsSection(panelBodyEl, copy);
+				});
+				break;
+			case "debug":
+				this.renderSettingsPanel(containerEl, (panelBodyEl) => {
+					this.renderDebugSettingsSection(panelBodyEl, copy);
+				});
+				break;
+		}
+	}
+
+	private renderGeneralSettingsSection(
+		containerEl: HTMLElement,
+		copy: SettingsTabCopy,
+	): void {
+		this.addSectionHeading(containerEl, copy.sections.general);
+		this.addChatTargetSettings(containerEl, copy);
 		this.addTextSetting(
+			containerEl,
 			copy.fields.fileNameTemplate,
 			this.plugin.settings.fileNameTemplate,
 			async (value) => {
 				await this.plugin.updateSettings({ fileNameTemplate: value });
 			},
 		);
+	}
 
-		this.addSectionHeading(copy.sections.output);
+	private renderOutputSettingsSection(
+		containerEl: HTMLElement,
+		copy: SettingsTabCopy,
+	): void {
+		this.addSectionHeading(containerEl, copy.sections.output);
 		this.addTextSetting(
+			containerEl,
 			copy.fields.messageHeadingSummaryLength,
 			String(this.plugin.settings.messageHeadingSummaryLength),
 			async (value) => {
@@ -35,8 +178,15 @@ export class ObarSettingTab extends PluginSettingTab {
 				});
 			},
 		);
-		this.addSectionHeading(copy.sections.postProcessing);
+	}
+
+	private renderPostProcessingSettingsSection(
+		containerEl: HTMLElement,
+		copy: SettingsTabCopy,
+	): void {
+		this.addSectionHeading(containerEl, copy.sections.postProcessing);
 		this.addToggleSetting(
+			containerEl,
 			copy.fields.openNoteAfterSave,
 			this.plugin.settings.openNoteAfterSave,
 			async (value) => {
@@ -44,6 +194,7 @@ export class ObarSettingTab extends PluginSettingTab {
 			},
 		);
 		this.addToggleSetting(
+			containerEl,
 			copy.fields.postProcessingEnabled,
 			this.plugin.settings.postProcessing.enabled,
 			async (value) => {
@@ -55,8 +206,9 @@ export class ObarSettingTab extends PluginSettingTab {
 				});
 			},
 		);
-		this.addPostProcessingCommandSettings(copy);
+		this.addPostProcessingCommandSettings(containerEl, copy);
 		this.addToggleSetting(
+			containerEl,
 			copy.fields.postProcessingOpenNote,
 			this.plugin.settings.postProcessing.openNote,
 			async (value) => {
@@ -68,9 +220,15 @@ export class ObarSettingTab extends PluginSettingTab {
 				});
 			},
 		);
+	}
 
-		this.addSectionHeading(copy.sections.capture);
+	private renderCaptureSettingsSection(
+		containerEl: HTMLElement,
+		copy: SettingsTabCopy,
+	): void {
+		this.addSectionHeading(containerEl, copy.sections.capture);
 		this.addToggleSetting(
+			containerEl,
 			copy.fields.autoCapture,
 			this.plugin.settings.autoCapture,
 			async (value) => {
@@ -78,6 +236,7 @@ export class ObarSettingTab extends PluginSettingTab {
 			},
 		);
 		this.addTextSetting(
+			containerEl,
 			copy.fields.pollIntervalMs,
 			String(this.plugin.settings.pollIntervalMs),
 			async (value) => {
@@ -87,6 +246,7 @@ export class ObarSettingTab extends PluginSettingTab {
 			},
 		);
 		this.addTextSetting(
+			containerEl,
 			copy.fields.settleRepeatCount,
 			String(this.plugin.settings.settleRepeatCount),
 			async (value) => {
@@ -96,6 +256,7 @@ export class ObarSettingTab extends PluginSettingTab {
 			},
 		);
 		this.addTextSetting(
+			containerEl,
 			copy.fields.settleTimeoutMs,
 			String(this.plugin.settings.settleTimeoutMs),
 			async (value) => {
@@ -104,9 +265,15 @@ export class ObarSettingTab extends PluginSettingTab {
 				});
 			},
 		);
+	}
 
-		this.addSectionHeading(copy.sections.debug);
+	private renderDebugSettingsSection(
+		containerEl: HTMLElement,
+		copy: SettingsTabCopy,
+	): void {
+		this.addSectionHeading(containerEl, copy.sections.debug);
 		this.addToggleSetting(
+			containerEl,
 			copy.fields.saveRawSnapshot,
 			this.plugin.settings.saveRawSnapshot,
 			async (value) => {
@@ -114,6 +281,7 @@ export class ObarSettingTab extends PluginSettingTab {
 			},
 		);
 		this.addTextSetting(
+			containerEl,
 			copy.fields.maxHtmlSnippetLength,
 			String(this.plugin.settings.maxHtmlSnippetLength),
 			async (value) => {
@@ -123,6 +291,7 @@ export class ObarSettingTab extends PluginSettingTab {
 			},
 		);
 		this.addToggleSetting(
+			containerEl,
 			copy.fields.debugMode,
 			this.plugin.settings.debugMode,
 			async (value) => {
@@ -131,16 +300,17 @@ export class ObarSettingTab extends PluginSettingTab {
 		);
 	}
 
-	private addSectionHeading(title: string): void {
-		new Setting(this.containerEl).setName(title).setHeading();
+	private addSectionHeading(containerEl: HTMLElement, title: string): void {
+		new Setting(containerEl).setName(title).setHeading();
 	}
 
 	private addTextSetting(
+		containerEl: HTMLElement,
 		copy: SettingsTabCopy["fields"][keyof SettingsTabCopy["fields"]],
 		value: string,
 		onChange: (value: string) => Promise<void>,
-	): void {
-		new Setting(this.containerEl)
+	): Setting {
+		const setting = new Setting(containerEl)
 			.setName(copy.name)
 			.setDesc(copy.description)
 			.addText((text) => {
@@ -150,21 +320,27 @@ export class ObarSettingTab extends PluginSettingTab {
 
 				return text.setValue(value).onChange(onChange);
 			});
+		return setting;
 	}
 
 	private addToggleSetting(
+		containerEl: HTMLElement,
 		copy: SettingsTabCopy["fields"][keyof SettingsTabCopy["fields"]],
 		value: boolean,
 		onChange: (value: boolean) => Promise<void>,
-	): void {
-		new Setting(this.containerEl)
+	): Setting {
+		const setting = new Setting(containerEl)
 			.setName(copy.name)
 			.setDesc(copy.description)
 			.addToggle((toggle) => toggle.setValue(value).onChange(onChange));
+		return setting;
 	}
 
-	private addPostProcessingCommandSettings(copy: SettingsTabCopy): void {
-		new Setting(this.containerEl)
+	private addPostProcessingCommandSettings(
+		containerEl: HTMLElement,
+		copy: SettingsTabCopy,
+	): void {
+		const pickerSetting = new Setting(containerEl)
 			.setName(copy.fields.postProcessingCommands.name)
 			.setDesc(copy.fields.postProcessingCommands.description)
 			.addButton((button) =>
@@ -174,10 +350,11 @@ export class ObarSettingTab extends PluginSettingTab {
 						this.openPostProcessingCommandPicker();
 					}),
 			);
+		pickerSetting.settingEl.classList.add("obar-settings-action-row");
 
 		const commandIds = this.plugin.settings.postProcessing.commandIds;
 		if (commandIds.length === 0) {
-			this.containerEl.createDiv({
+			containerEl.createEl("p", {
 				cls: "obar-post-processing-empty setting-item-description",
 				text: copy.postProcessingList.empty,
 			});
@@ -189,9 +366,10 @@ export class ObarSettingTab extends PluginSettingTab {
 			const description = command
 				? command.id
 				: `${commandId} (${copy.postProcessingList.missingDescription})`;
-			const setting = new Setting(this.containerEl)
+			const setting = new Setting(containerEl)
 				.setName(command?.name ?? copy.postProcessingList.missingName)
 				.setDesc(description);
+			setting.settingEl.classList.add("obar-post-processing-command");
 
 			setting.addButton((button) =>
 				button
@@ -219,8 +397,11 @@ export class ObarSettingTab extends PluginSettingTab {
 		});
 	}
 
-	private addChatTargetSettings(copy: SettingsTabCopy): void {
-		new Setting(this.containerEl)
+	private addChatTargetSettings(
+		containerEl: HTMLElement,
+		copy: SettingsTabCopy,
+	): void {
+		const actionSetting = new Setting(containerEl)
 			.setName(copy.fields.chatTargets.name)
 			.setDesc(copy.fields.chatTargets.description)
 			.addButton((button) =>
@@ -239,9 +420,10 @@ export class ObarSettingTab extends PluginSettingTab {
 						this.display();
 					}),
 			);
+		actionSetting.settingEl.classList.add("obar-settings-action-row");
 
 		this.plugin.settings.chatTargets.forEach((rule, index) => {
-			const setting = new Setting(this.containerEl)
+			const setting = new Setting(containerEl)
 				.setName(`${copy.chatTargetRule.namePrefix} ${index + 1}`)
 				.setDesc(copy.chatTargetRule.description)
 				.addText((text) => {
@@ -258,6 +440,8 @@ export class ObarSettingTab extends PluginSettingTab {
 						.setValue(rule.saveFolder)
 						.onChange(async (value) => this.updateChatTarget(index, { saveFolder: value }));
 				});
+			setting.settingEl.classList.add("obar-chat-target-rule");
+			setting.controlEl.classList.add("obar-chat-target-rule-control");
 
 			if (this.plugin.settings.chatTargets.length > 1) {
 				setting.addExtraButton((button) =>

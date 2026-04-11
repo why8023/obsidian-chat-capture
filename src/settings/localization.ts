@@ -7,6 +7,28 @@ interface SettingText {
 }
 
 export interface SettingsTabCopy {
+	page: {
+		title: string;
+		description: string;
+	};
+	tabs: {
+		general: {
+			label: string;
+			description: string;
+		};
+		output: {
+			label: string;
+			description: string;
+		};
+		capture: {
+			label: string;
+			description: string;
+		};
+		debug: {
+			label: string;
+			description: string;
+		};
+	};
 	sections: {
 		general: string;
 		output: string;
@@ -58,6 +80,33 @@ export interface SettingsTabCopy {
 }
 
 const ENGLISH_COPY: SettingsTabCopy = {
+	page: {
+		title: "OBAR settings",
+		description:
+			"Configure how OBAR matches supported chat pages, writes notes, and exposes diagnostics when you need to troubleshoot capture behavior.",
+	},
+	tabs: {
+		general: {
+			label: "General",
+			description:
+				"Choose which chat URLs OBAR tracks and where the generated notes are stored in your vault.",
+		},
+		output: {
+			label: "Output and save",
+			description:
+				"Adjust note formatting and the follow-up actions OBAR runs after each successful save.",
+		},
+		capture: {
+			label: "Automatic capture",
+			description:
+				"Tune background polling and fallback completion detection for the controlled web viewer.",
+		},
+		debug: {
+			label: "Debug",
+			description:
+				"Control snapshot dumps and verbose logging when you are diagnosing capture problems.",
+		},
+	},
 	sections: {
 		general: "General",
 		output: "Output format",
@@ -166,6 +215,29 @@ const ENGLISH_COPY: SettingsTabCopy = {
 };
 
 const CHINESE_COPY: SettingsTabCopy = {
+	page: {
+		title: "OBAR 设置",
+		description:
+			"配置 OBAR 如何匹配聊天页面、生成笔记，以及在需要排查采集问题时输出调试信息。",
+	},
+	tabs: {
+		general: {
+			label: "常规",
+			description: "选择要匹配的聊天网址，以及生成笔记保存到库内的哪个目录。",
+		},
+		output: {
+			label: "导出与保存",
+			description: "调整笔记导出格式，以及每次保存后需要执行的后续动作。",
+		},
+		capture: {
+			label: "自动采集",
+			description: "调节后台轮询频率，以及在缺少完成信号时的回退判稳策略。",
+		},
+		debug: {
+			label: "调试",
+			description: "控制快照转储和详细诊断日志，便于排查采集问题。",
+		},
+	},
 	sections: {
 		general: "常规",
 		output: "导出格式",

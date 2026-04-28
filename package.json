@@ -25,7 +25,7 @@
 		"typescript-eslint": "8.35.1"
 	},
 	"dependencies": {
-		"defuddle": "^0.15.0",
+		"defuddle": "^0.18.1",
 		"linkedom": "^0.18.12",
 		"obsidian": "latest",
 		"remark-gfm": "^4.0.1",

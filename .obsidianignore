@@ -1,3 +1,9 @@
-# Extends the whyspace vault root document and attachment allowlist when opened from that vault.
-# Existing project dependencies and tool caches.
+# Project-local Obsidian scan exclusions.
+.git/
+.codex-artifact-work/
+.DS_Store
+Thumbs.db
+
+# Node.js dependencies and local npm cache.
 /node_modules/
+/.npm/
